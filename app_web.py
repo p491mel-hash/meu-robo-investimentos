@@ -146,6 +146,7 @@ try:
             exp2 = df['Close'].ewm(span=26, adjust=False).mean()
             df['MACD'] = exp1 - exp2
             df['MACD_Sinal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+            df['MACD_Hist'] = df['MACD'] - df['MACD_Sinal'] # <--- Correção aqui
             
             df['MA_Curta'] = df['Close'].rolling(window=9).mean()
             df['MA_Longa'] = df['Close'].rolling(window=21).mean()
@@ -157,14 +158,14 @@ try:
             cond_giba_compra = ultimo['MA_Curta'] > ultimo['MA_Longa']
             cond_jacare_compra = ultimo['labios'] > ultimo['dentes'] > ultimo['mandibula']
             cond_forca_compra = ultimo['forca_compra'] > 60
-            cond_rsi_compra = ultimo['RSI'] < 70 # Não sobrecomprado
+            cond_rsi_compra = ultimo['RSI'] < 70
             cond_macd_compra = ultimo['MACD'] > ultimo['MACD_Sinal']
             
             # 2. Condições de VENDA
             cond_giba_venda = ultimo['MA_Curta'] < ultimo['MA_Longa']
             cond_jacare_venda = ultimo['labios'] < ultimo['dentes'] < ultimo['mandibula']
             cond_forca_venda = ultimo['forca_compra'] < 40
-            cond_rsi_venda = ultimo['RSI'] > 30 # Não sobrevendido
+            cond_rsi_venda = ultimo['RSI'] > 30
             cond_macd_venda = ultimo['MACD'] < ultimo['MACD_Sinal']
             
             # --- EXIBE O VEREDITO ---
@@ -175,7 +176,6 @@ try:
             else:
                 st.warning("### ⏳ AGUARDAR. Os indicadores não estão alinhados. Não entre agora.")
             
-            # Explicação do que faltou
             with st.expander("Ver detalhes dos indicadores"):
                 st.write(f"**Gibex (Tendência):** {'Alta' if cond_giba_compra else 'Baixa'}")
                 st.write(f"**Jacaré:** {'Boca aberta para cima' if cond_jacare_compra else 'Boca aberta para baixo' if cond_jacare_venda else 'Boca fechada/Lateral'}")
