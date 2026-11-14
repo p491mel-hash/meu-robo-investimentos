@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import yfinance as yf
 import time
 
 st.set_page_config(page_title="Super Robô - Global", layout="wide", page_icon="🌎")
@@ -12,22 +13,23 @@ st.title("🌎 Super Robô de Day Trade - Global")
 # --- AUTO-REFRESH ---
 if 'last_update' not in st.session_state:
     st.session_state.last_update = time.time()
-
-tempo_decorrido = time.time() - st.session_state.last_update
-if tempo_decorrido > 30:
+if time.time() - st.session_state.last_update > 30:
     st.session_state.last_update = time.time()
     st.rerun()
 
 # --- BARRA LATERAL ---
 st.sidebar.header("Configurações")
 stop_loss_pct = st.sidebar.number_input("Stop Loss (%):", min_value=0.1, max_value=5.0, value=2.0, step=0.1) / 100
-ativo_grafico = st.sidebar.selectbox("Ativo para o Gráfico:", ["PETR4", "VALE3", "ITUB4", "BOVA11", "USDB11"])
+# Tickers para o Yahoo Finance (precisam do .SA)
+ativo_grafico = st.sidebar.selectbox("Ativo para o Gráfico:", ["PETR4.SA", "VALE3.SA", "ITUB4.SA", "BOVA11.SA", "USDB11.SA"])
 timeframe = st.sidebar.selectbox("Tempo Gráfico (Timeframe):", ["1m", "5m", "15m", "1h"])
 
-# --- FUNÇÕES DE BUSCA ---
+# --- FUNÇÕES DE BUSCA (Brapi para os cards) ---
 def buscar_dados(ativo):
+    # Remove o .SA para a brapi
+    ticker_brapi = ativo.replace(".SA", "")
     try:
-        url = f"https://brapi.dev/api/quote/{ativo}?range=1d&interval={timeframe}"
+        url = f"https://brapi.dev/api/quote/{ticker_brapi}?range=1d&interval={timeframe}"
         resposta = requests.get(url, timeout=5)
         dados = resposta.json()
         if dados.get('results'):
@@ -53,7 +55,7 @@ def buscar_dados(ativo):
 def mostrar_ativo(ativo, coluna):
     preco, var, f_compra, f_venda = buscar_dados(ativo)
     with coluna:
-        st.subheader(ativo)
+        st.subheader(ativo.replace(".SA", ""))
         if preco is not None:
             st.metric(label="Preço", value=f"R$ {preco:.2f}", delta=f"{var:+.2f}%")
             st.write("🟦 Força de Compra:")
@@ -105,42 +107,45 @@ with aba_internacional:
     for i, ativo in enumerate(internacional):
         mostrar_ativo(ativo, colunas[i])
 
-# NOVA ABA: Dólar e Índice (Usando ETFs)
 with aba_indices:
-    st.info("Para acompanhar o Dólar e o Ibovespa em tempo real no plano gratuito, usamos os ETFs (BOVA11 e USDB11).")
+    st.info("Dólar e Ibovespa via ETFs (BOVA11 e USDB11).")
     indices = ['BOVA11', 'USDB11', 'BOVV11', 'DOLA11']
     colunas = st.columns(len(indices))
     for i, ativo in enumerate(indices):
         mostrar_ativo(ativo, colunas[i])
 
-# --- GRÁFICO PROFISSIONAL (JACARÉ + FORÇA) ---
+# --- GRÁFICO COM YAHOO FINANCE (JACARÉ + FORÇA) ---
 st.divider()
 st.subheader(f"🐊 Análise de Fluxo: {ativo_grafico} ({timeframe})")
 
 try:
-    url_hist = f"https://brapi.dev/api/v2/stocks/historical?symbols={ativo_grafico}&range=1d&interval={timeframe}"
-    resp_hist = requests.get(url_hist, timeout=10)
-    dados_hist = resp_hist.json()
+    # Yahoo Finance: busca os dados históricos
+    # period="1d" pega o dia atual; interval é o timeframe
+    df = yf.download(ativo_grafico, period="1d", interval=timeframe, progress=False)
     
-    if dados_hist.get('results') and len(dados_hist['results']) > 0:
-        hist_data = dados_hist['results'][0].get('data', {})
-        if 'historicalDataPrice' in hist_data:
-            candles = hist_data['historicalDataPrice']
-            df = pd.DataFrame(candles)
-            df['date'] = pd.to_datetime(df['date'], unit='s')
+    if not df.empty:
+        # Yahoo retorna um MultiIndex; precisamos achatar
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
             
-            # Filtra horário de pregão
-            df = df[(df['date'].dt.hour >= 10) & (df['date'].dt.hour <= 17)]
-            
+        df = df.reset_index()
+        # A coluna de data pode se chamar 'Datetime' ou 'Date'
+        coluna_data = 'Datetime' if 'Datetime' in df.columns else 'Date'
+        df['date'] = pd.to_datetime(df[coluna_data])
+        
+        # Filtra horário de pregão (10h às 17h)
+        df = df[(df['date'].dt.hour >= 10) & (df['date'].dt.hour <= 17)]
+        
+        if len(df) > 5:
             # --- CÁLCULO DO JACARÉ ---
-            df['mandibula'] = df['close'].ewm(span=13, adjust=False).mean().shift(8)
-            df['dentes'] = df['close'].ewm(span=8, adjust=False).mean().shift(5)
-            df['labios'] = df['close'].ewm(span=5, adjust=False).mean().shift(3)
+            df['mandibula'] = df['Close'].ewm(span=13, adjust=False).mean().shift(8)
+            df['dentes'] = df['Close'].ewm(span=8, adjust=False).mean().shift(5)
+            df['labios'] = df['Close'].ewm(span=5, adjust=False).mean().shift(3)
             
             # --- CÁLCULO DA FORÇA (BOP) ---
-            df['range'] = df['high'] - df['low']
+            df['range'] = df['High'] - df['Low']
             df['range'] = df['range'].replace(0, 0.01) 
-            df['bop'] = (df['close'] - df['open']) / df['range']
+            df['bop'] = (df['Close'] - df['Open']) / df['range']
             df['forca_compra'] = (df['bop'] + 1) * 50
             df['forca_compra'] = df['forca_compra'].clip(0, 100)
             
@@ -155,7 +160,7 @@ try:
             
             # 1. Velas
             fig.add_trace(go.Candlestick(
-                x=df['date'], open=df['open'], high=df['high'], low=df['low'], close=df['close'],
+                x=df['date'], open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
                 name='Preço', increasing_line_color='#00ff88', decreasing_line_color='#ff4d4d',
                 showlegend=False
             ), row=1, col=1)
@@ -166,7 +171,7 @@ try:
             fig.add_trace(go.Scatter(x=df['date'], y=df['labios'], line=dict(color='#00ff88', width=1.5), name='Lábios'), row=1, col=1)
             
             # 3. Stop Loss
-            ultimo_preco = df['close'].iloc[-1]
+            ultimo_preco = df['Close'].iloc[-1]
             linha_stop = ultimo_preco * (1 - stop_loss_pct)
             fig.add_hline(y=linha_stop, line_dash="dash", line_color="#ffcc00", annotation_text=f"Stop: R$ {linha_stop:.2f}", annotation_position="top right", row=1, col=1)
             
@@ -193,10 +198,9 @@ try:
             fig.update_yaxes(title_text="Força", range=[0, 100], row=2, col=1, side="right")
             
             st.plotly_chart(fig, use_container_width=True)
-            
         else:
-            st.warning("A API não retornou dados de velas (OHLC) para este ativo.")
+            st.warning("Poucos dados para o gráfico hoje. O mercado pode estar fechado ou a API do Yahoo está lenta.")
     else:
-        st.warning("Não foi possível carregar o histórico.")
+        st.warning("Yahoo Finance não retornou dados para este ativo. Verifique o ticker (ex: BOVA11.SA).")
 except Exception as e:
-    st.error(f"Erro ao carregar gráfico: {e}")
+    st.error(f"Erro ao carregar gráfico do Yahoo: {e}")
