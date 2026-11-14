@@ -23,7 +23,7 @@ stop_loss_pct = st.sidebar.number_input("Stop Loss (%):", min_value=0.1, max_val
 ativo_grafico = st.sidebar.selectbox("Ativo para o Gráfico:", ["PETR4.SA", "VALE3.SA", "ITUB4.SA", "BOVA11.SA", "USDB11.SA"])
 timeframe = st.sidebar.selectbox("Tempo Gráfico (Timeframe):", ["1m", "5m", "15m", "1h"])
 
-# --- FUNÇÕES DE BUSCA (Brapi para os cards) ---
+# --- FUNÇÕES DE BUSCA (Brapi) ---
 def buscar_dados(ativo):
     ticker_brapi = ativo.replace(".SA", "")
     try:
@@ -109,9 +109,9 @@ with aba_indices:
     for i, ativo in enumerate(indices):
         mostrar_ativo(ativo, colunas[i])
 
-# --- GRÁFICO COM YAHOO FINANCE (JACARÉ + FORÇA + RSI + MACD + GIBA) ---
+# --- GRÁFICO E SINAL CLARO ---
 st.divider()
-st.subheader(f"🐊 Análise de Fluxo: {ativo_grafico} ({timeframe})")
+st.subheader(f"🐊 Análise de Fluxo e SINAL: {ativo_grafico} ({timeframe})")
 
 try:
     df = yf.download(ativo_grafico, period="1d", interval=timeframe, progress=False)
@@ -124,12 +124,11 @@ try:
         df = df[(df['date'].dt.hour >= 10) & (df['date'].dt.hour <= 17)]
         
         if len(df) > 5:
-            # --- JACARÉ ---
+            # --- INDICADORES ---
             df['mandibula'] = df['Close'].ewm(span=13, adjust=False).mean().shift(8)
             df['dentes'] = df['Close'].ewm(span=8, adjust=False).mean().shift(5)
             df['labios'] = df['Close'].ewm(span=5, adjust=False).mean().shift(3)
             
-            # --- FORÇA (BOP) ---
             df['range'] = df['High'] - df['Low']
             df['range'] = df['range'].replace(0, 0.01) 
             df['bop'] = (df['Close'] - df['Open']) / df['range']
@@ -137,108 +136,87 @@ try:
             df['forca_compra'] = df['forca_compra'].clip(0, 100)
             cores_forca = ['#4da6ff' if fc >= 50 else '#ff4d4d' for fc in df['forca_compra']]
             
-            # --- RSI (14) ---
             delta = df['Close'].diff()
             gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
             rs = gain / loss
             df['RSI'] = 100 - (100 / (1 + rs))
             
-            # --- MACD (12, 26, 9) ---
             exp1 = df['Close'].ewm(span=12, adjust=False).mean()
             exp2 = df['Close'].ewm(span=26, adjust=False).mean()
             df['MACD'] = exp1 - exp2
             df['MACD_Sinal'] = df['MACD'].ewm(span=9, adjust=False).mean()
-            df['MACD_Hist'] = df['MACD'] - df['MACD_Sinal']
             
-            # --- APROXIMAÇÃO DO GIBA (Gibex Sossegado) ---
-            # Lógica: Se a média curta (9) estiver acima da média longa (21), tendência de alta (Verde).
-            # Se estiver abaixo, tendência de baixa (Vermelho). Se estiverem muito próximas, cinza (lateral).
             df['MA_Curta'] = df['Close'].rolling(window=9).mean()
             df['MA_Longa'] = df['Close'].rolling(window=21).mean()
             
-            def cor_giba(row):
-                if pd.isna(row['MA_Curta']) or pd.isna(row['MA_Longa']):
-                    return '#888888'
-                diff = (row['MA_Curta'] - row['MA_Longa']) / row['MA_Longa']
-                if diff > 0.001: # 0.1% de diferença para cima
-                    return '#00ff88' # Verde (Alta)
-                elif diff < -0.001: # 0.1% de diferença para baixo
-                    return '#ff4d4d' # Vermelho (Baixa)
-                else:
-                    return '#888888' # Cinza (Lateral)
+            # --- LÓGICA DO SINAL CLARO (CONFLUÊNCIA) ---
+            ultimo = df.iloc[-1]
             
-            df['Cor_Giba'] = df.apply(cor_giba, axis=1)
+            # 1. Condições de COMPRA
+            cond_giba_compra = ultimo['MA_Curta'] > ultimo['MA_Longa']
+            cond_jacare_compra = ultimo['labios'] > ultimo['dentes'] > ultimo['mandibula']
+            cond_forca_compra = ultimo['forca_compra'] > 60
+            cond_rsi_compra = ultimo['RSI'] < 70 # Não sobrecomprado
+            cond_macd_compra = ultimo['MACD'] > ultimo['MACD_Sinal']
             
-            # --- CRIA O GRÁFICO (4 Linhas) ---
-            fig = make_subplots(
-                rows=4, cols=1, 
-                shared_xaxes=True, 
-                vertical_spacing=0.03,
-                row_heights=[0.5, 0.15, 0.15, 0.2],
-                subplot_titles=("Preço + Jacaré", "Força (BOP)", "RSI", "MACD")
-            )
+            # 2. Condições de VENDA
+            cond_giba_venda = ultimo['MA_Curta'] < ultimo['MA_Longa']
+            cond_jacare_venda = ultimo['labios'] < ultimo['dentes'] < ultimo['mandibula']
+            cond_forca_venda = ultimo['forca_compra'] < 40
+            cond_rsi_venda = ultimo['RSI'] > 30 # Não sobrevendido
+            cond_macd_venda = ultimo['MACD'] < ultimo['MACD_Sinal']
             
-            # 1. Velas (com cor do Giba se quiser, mas vamos manter o padrão verde/vermelho e o Jacaré em cima)
-            fig.add_trace(go.Candlestick(
-                x=df['date'], open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
-                name='Preço', increasing_line_color='#00ff88', decreasing_line_color='#ff4d4d',
-                showlegend=False
-            ), row=1, col=1)
+            # --- EXIBE O VEREDITO ---
+            if all([cond_giba_compra, cond_jacare_compra, cond_forca_compra, cond_rsi_compra, cond_macd_compra]):
+                st.success("### 🟢 SINAL DE COMPRA CONFIRMADO! Todos os indicadores estão alinhados.")
+            elif all([cond_giba_venda, cond_jacare_venda, cond_forca_venda, cond_rsi_venda, cond_macd_venda]):
+                st.error("### 🔴 SINAL DE VENDA CONFIRMADO! Todos os indicadores estão alinhados.")
+            else:
+                st.warning("### ⏳ AGUARDAR. Os indicadores não estão alinhados. Não entre agora.")
             
-            # Jacaré
+            # Explicação do que faltou
+            with st.expander("Ver detalhes dos indicadores"):
+                st.write(f"**Gibex (Tendência):** {'Alta' if cond_giba_compra else 'Baixa'}")
+                st.write(f"**Jacaré:** {'Boca aberta para cima' if cond_jacare_compra else 'Boca aberta para baixo' if cond_jacare_venda else 'Boca fechada/Lateral'}")
+                st.write(f"**Força (BOP):** {ultimo['forca_compra']:.1f}%")
+                st.write(f"**RSI:** {ultimo['RSI']:.1f}")
+                st.write(f"**MACD:** {'Cruzado para cima' if cond_macd_compra else 'Cruzado para baixo'}")
+
+            # --- DESENHA O GRÁFICO ---
+            fig = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.5, 0.15, 0.15, 0.2])
+            
+            fig.add_trace(go.Candlestick(x=df['date'], open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Preço', increasing_line_color='#00ff88', decreasing_line_color='#ff4d4d', showlegend=False), row=1, col=1)
             fig.add_trace(go.Scatter(x=df['date'], y=df['mandibula'], line=dict(color='#4da6ff', width=1.5), name='Mandíbula'), row=1, col=1)
             fig.add_trace(go.Scatter(x=df['date'], y=df['dentes'], line=dict(color='#ff4d4d', width=1.5), name='Dentes'), row=1, col=1)
             fig.add_trace(go.Scatter(x=df['date'], y=df['labios'], line=dict(color='#00ff88', width=1.5), name='Lábios'), row=1, col=1)
             
-            # Stop Loss
             ultimo_preco = df['Close'].iloc[-1]
             linha_stop = ultimo_preco * (1 - stop_loss_pct)
             fig.add_hline(y=linha_stop, line_dash="dash", line_color="#ffcc00", annotation_text=f"Stop: R$ {linha_stop:.2f}", annotation_position="top right", row=1, col=1)
             
-            # 2. Barras de Força
             fig.add_trace(go.Bar(x=df['date'], y=df['forca_compra'], name='Força', marker_color=cores_forca, showlegend=False), row=2, col=1)
             fig.add_hline(y=50, line_dash="dot", line_color="gray", row=2, col=1)
             
-            # 3. RSI
             fig.add_trace(go.Scatter(x=df['date'], y=df['RSI'], line=dict(color='#ffcc00', width=1.5), name='RSI'), row=3, col=1)
             fig.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1)
             fig.add_hline(y=30, line_dash="dash", line_color="green", row=3, col=1)
             
-            # 4. MACD
             fig.add_trace(go.Scatter(x=df['date'], y=df['MACD'], line=dict(color='#4da6ff', width=1.5), name='MACD'), row=4, col=1)
             fig.add_trace(go.Scatter(x=df['date'], y=df['MACD_Sinal'], line=dict(color='#ff4d4d', width=1.5), name='Sinal'), row=4, col=1)
             cores_hist = ['#00ff88' if val >= 0 else '#ff4d4d' for val in df['MACD_Hist']]
             fig.add_trace(go.Bar(x=df['date'], y=df['MACD_Hist'], name='Histograma', marker_color=cores_hist, opacity=0.6, showlegend=False), row=4, col=1)
             
-            fig.update_layout(
-                template='plotly_dark',
-                xaxis_rangeslider_visible=False,
-                height=900, # Aumentei a altura para caber tudo
-                margin=dict(l=20, r=20, t=40, b=20),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=10))
-            )
-            
+            fig.update_layout(template='plotly_dark', xaxis_rangeslider_visible=False, height=900, margin=dict(l=20, r=20, t=40, b=20), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=10)))
             fig.update_xaxes(showticklabels=False, row=1, col=1)
             fig.update_xaxes(showticklabels=False, row=2, col=1)
             fig.update_xaxes(showticklabels=False, row=3, col=1)
-            
             fig.update_yaxes(title_text="Preço", row=1, col=1, side="right")
             fig.update_yaxes(title_text="Força", range=[0, 100], row=2, col=1, side="right")
             fig.update_yaxes(title_text="RSI", range=[0, 100], row=3, col=1, side="right")
             fig.update_yaxes(title_text="MACD", row=4, col=1, side="right")
             
             st.plotly_chart(fig, use_container_width=True)
-            
-            # --- EXPLICAÇÃO DO GIBA (APROXIMAÇÃO) ---
-            st.markdown("""
-            ### 🐊 Como ler o gráfico:
-            *   **Em cima:** Velas + Jacaré. Boca fechada = lateral. Boca aberta = tendência.
-            *   **Força (BOP):** Barra Azul = Compra. Barra Vermelha = Venda.
-            *   **RSI:** Acima de 70 = Sobrecomprado (cuidado). Abaixo de 30 = Sobrevendido (oportunidade).
-            *   **MACD:** Cruzou para cima = Alta. Cruzou para baixo = Baixa.
-            *   **Aproximação do Gibex (Cores nos candles):** Verde = Tendência de Alta (Média 9 > Média 21). Vermelho = Tendência de Baixa. Cinza = Lateral (Não opere!).
-            """)
             
         else:
             st.warning("Poucos dados para o gráfico hoje. O mercado pode estar fechado.")
