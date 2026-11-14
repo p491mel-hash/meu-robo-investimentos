@@ -14,7 +14,7 @@ st.sidebar.header("Configurações")
 intervalo = st.sidebar.slider("Atualizar a cada (segundos):", 10, 60, 15)
 stop_loss_pct = st.sidebar.number_input("Stop Loss (%):", min_value=0.1, max_value=5.0, value=2.0, step=0.1) / 100
 
-# --- FUNÇÃO DE BUSCA (A mesma de antes) ---
+# --- FUNÇÃO DE BUSCA ---
 def buscar_dados(ativo):
     try:
         url = f"https://brapi.dev/api/quote/{ativo}?range=1d&interval=5m"
@@ -87,7 +87,7 @@ with aba_fiis:
     for i, ativo in enumerate(fiis):
         mostrar_ativo(ativo, colunas[i])
 
-# 3. Aba de Commodities (ETFs e BDRs)
+# 3. Aba de Commodities
 with aba_commodities:
     st.info("ETFs e BDRs de Commodities negociados na B3.")
     commodities = ['CMDB11', 'GOLD11', 'BIAU39', 'BSLV39', 'BCOM39', 'BBOI11']
@@ -95,10 +95,28 @@ with aba_commodities:
     for i, ativo in enumerate(commodities):
         mostrar_ativo(ativo, colunas[i])
 
-# 4. Aba Internacional (Índices e FIIs Globais via BDRs)
+# 4. Aba Internacional
 with aba_internacional:
     st.info("ETFs Internacionais negociados na B3.")
     internacional = ['IVVB11', 'SPXI11', 'BEWJ39', 'BEWG39', 'ACWX39']
     colunas = st.columns(len(internacional))
     for i, ativo in enumerate(internacional):
         mostrar_ativo(ativo, colunas[i])
+
+# --- GRÁFICO DE VOLTA ---
+st.divider()
+st.subheader("📈 Gráfico Comparativo (Histórico Simulado)")
+
+# Criando um gráfico simples para mostrar a evolução dos ativos em destaque
+dados_grafico = []
+for ativo in ['PETR4', 'VALE3', 'ITUB4']:
+    preco = buscar_dados(ativo)[0]
+    if preco:
+        dados_grafico.append({'Ativo': ativo, 'Preço': preco, 'Horário': datetime.now().strftime('%H:%M:%S')})
+
+if dados_grafico:
+    df_grafico = pd.DataFrame(dados_grafico)
+    # O Streamlit tem uma função nativa de gráfico de barras que fica linda
+    st.bar_chart(df_grafico.set_index('Ativo')['Preço'])
+else:
+    st.info("Aguardando dados para desenhar o gráfico...")
