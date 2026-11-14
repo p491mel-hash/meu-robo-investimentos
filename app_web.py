@@ -105,12 +105,13 @@ with aba_internacional:
     for i, ativo in enumerate(internacional):
         mostrar_ativo(ativo, colunas[i])
 
-# --- GRÁFICO COM JACARÉ E BARRAS DE FORÇA ---
+# --- GRÁFICO PROFISSIONAL (JACARÉ + FORÇA) ---
 st.divider()
-st.subheader(f"🐊 Gráfico Integrado: {ativo_grafico} ({timeframe})")
+st.subheader(f"🐊 Análise de Fluxo: {ativo_grafico} ({timeframe})")
 
 try:
-    url_hist = f"https://brapi.dev/api/v2/stocks/historical?symbols={ativo_grafico}&range=5d&interval={timeframe}"
+    # MUDANÇA IMPORTANTE: range=1d para pegar só o dia de hoje (gráfico contínuo)
+    url_hist = f"https://brapi.dev/api/v2/stocks/historical?symbols={ativo_grafico}&range=1d&interval={timeframe}"
     resp_hist = requests.get(url_hist, timeout=10)
     dados_hist = resp_hist.json()
     
@@ -121,86 +122,76 @@ try:
             df = pd.DataFrame(candles)
             df['date'] = pd.to_datetime(df['date'], unit='s')
             
-            # --- CÁLCULO DO JACARÉ ---
+            # Filtra apenas o horário de pregão (10h às 17h) para tirar os vazios
+            df = df[(df['date'].dt.hour >= 10) & (df['date'].dt.hour <= 17)]
+            
+            # --- CÁLCULO DO JACARÉ (ALLIGATOR) ---
+            # SMMA (Smoothed Moving Average) é uma EMA mais lenta, fica mais suave
             df['mandibula'] = df['close'].ewm(span=13, adjust=False).mean().shift(8)
             df['dentes'] = df['close'].ewm(span=8, adjust=False).mean().shift(5)
             df['labios'] = df['close'].ewm(span=5, adjust=False).mean().shift(3)
             
-            # --- CÁLCULO DA FORÇA (BOP) PARA CADA CANDLE ---
-            # Previne divisão por zero
+            # --- CÁLCULO DA FORÇA (BOP) ---
             df['range'] = df['high'] - df['low']
             df['range'] = df['range'].replace(0, 0.01) 
-            
-            # BOP = (Fechamento - Abertura) / (Máxima - Mínima)
             df['bop'] = (df['close'] - df['open']) / df['range']
-            
-            # Converte o BOP para uma escala de 0 a 100 (Força de Compra)
             df['forca_compra'] = (df['bop'] + 1) * 50
             df['forca_compra'] = df['forca_compra'].clip(0, 100)
             
-            # Força de venda é o inverso
-            df['forca_venda'] = 100 - df['forca_compra']
-            
-            # Cor da barra de força (Verde se compra > venda, Vermelho se venda > compra)
+            # Cores para as barras (Azul para Compra, Vermelho para Venda)
             cores_forca = ['#4da6ff' if fc >= 50 else '#ff4d4d' for fc in df['forca_compra']]
             
-            # Cria a figura com 2 linhas (Gráfico de Velas em cima, Força embaixo)
+            # --- CRIA O GRÁFICO DUPLO ---
             fig = make_subplots(
                 rows=2, cols=1, 
                 shared_xaxes=True, 
-                vertical_spacing=0.05,
-                row_heights=[0.7, 0.3] # 70% para velas, 30% para força
+                vertical_spacing=0.03,
+                row_heights=[0.75, 0.25] # 75% velas, 25% força
             )
             
-            # 1. Adiciona as Velas (Linha 1)
+            # 1. Velas
             fig.add_trace(go.Candlestick(
                 x=df['date'], open=df['open'], high=df['high'], low=df['low'], close=df['close'],
-                name='Preço', increasing_line_color='#00ff88', decreasing_line_color='#ff4d4d'
+                name='Preço', increasing_line_color='#00ff88', decreasing_line_color='#ff4d4d',
+                showlegend=False
             ), row=1, col=1)
             
-            # 2. Adiciona o Jacaré (Linha 1)
-            fig.add_trace(go.Scatter(x=df['date'], y=df['mandibula'], line=dict(color='#4da6ff', width=1.5), name='Mandíbula (13)'), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df['date'], y=df['dentes'], line=dict(color='#ff4d4d', width=1.5), name='Dentes (8)'), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df['date'], y=df['labios'], line=dict(color='#00ff88', width=1.5), name='Lábios (5)'), row=1, col=1)
+            # 2. Jacaré
+            fig.add_trace(go.Scatter(x=df['date'], y=df['mandibula'], line=dict(color='#4da6ff', width=1.5), name='Mandíbula (Azul)'), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df['date'], y=df['dentes'], line=dict(color='#ff4d4d', width=1.5), name='Dentes (Vermelho)'), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df['date'], y=df['labios'], line=dict(color='#00ff88', width=1.5), name='Lábios (Verde)'), row=1, col=1)
             
-            # 3. Adiciona o Stop Loss (Linha 1)
+            # 3. Stop Loss
             ultimo_preco = df['close'].iloc[-1]
             linha_stop = ultimo_preco * (1 - stop_loss_pct)
-            fig.add_hline(y=linha_stop, line_dash="dash", line_color="red", annotation_text=f"Stop: R$ {linha_stop:.2f}", annotation_position="bottom right", row=1, col=1)
+            fig.add_hline(y=linha_stop, line_dash="dash", line_color="#ffcc00", annotation_text=f"Stop: R$ {linha_stop:.2f}", annotation_position="top right", row=1, col=1)
             
-            # 4. Adiciona as Barras de Força (Linha 2)
+            # 4. Barras de Força
             fig.add_trace(go.Bar(
                 x=df['date'], y=df['forca_compra'],
-                name='Força de Compra/Venda',
+                name='Força (Azul=Compra / Vermelho=Venda)',
                 marker_color=cores_forca,
-                hovertemplate='Força: %{y:.1f}%<extra></extra>'
+                hovertemplate='Força: %{y:.1f}%<extra></extra>',
+                showlegend=False
             ), row=2, col=1)
             
-            # Linha de referência em 50% (equilíbrio)
+            # Linha de 50% no gráfico de força
             fig.add_hline(y=50, line_dash="dot", line_color="gray", row=2, col=1)
             
-            # Configuração do Layout
+            # Layout Limpo
             fig.update_layout(
                 template='plotly_dark',
                 xaxis_rangeslider_visible=False,
                 height=700,
                 margin=dict(l=20, r=20, t=20, b=20),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1, font=dict(size=10))
             )
             
-            # Remove o eixo X duplicado
             fig.update_xaxes(showticklabels=False, row=1, col=1)
+            fig.update_yaxes(title_text="Preço (R$)", row=1, col=1, side="right")
+            fig.update_yaxes(title_text="Força (%)", range=[0, 100], row=2, col=1, side="right")
             
             st.plotly_chart(fig, use_container_width=True)
-            
-            # --- EXPLICAÇÃO DO JACARÉ ---
-            st.markdown("""
-            ### 🐊 Como ler o gráfico:
-            *   **Em cima:** O Jacaré (Alligator). Boca fechada = mercado de lado. Boca aberta = tendência.
-            *   **Embaixo:** A Força de cada candle (BOP).
-                *   **Barra Azul:** Fechou mais perto da máxima (compra).
-                *   **Barra Vermelha:** Fechou mais perto da mínima (venda).
-            """)
             
         else:
             st.warning("A API não retornou dados de velas (OHLC) para este ativo.")
