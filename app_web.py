@@ -28,17 +28,50 @@ if time.time() - st.session_state.last_update > 30:
 
 # --- BARRA LATERAL (ESQUERDA) ---
 st.sidebar.title("🌎 Super Robô")
-st.sidebar.header("Configurações do Gráfico")
 
+# Configurações do Gráfico
+st.sidebar.header("Configurações do Gráfico")
 ativo_grafico = st.sidebar.selectbox("Ativo Principal:", ["PETR4.SA", "VALE3.SA", "ITUB4.SA", "BOVA11.SA", "USDB11.SA"])
 timeframe = st.sidebar.selectbox("Tempo Gráfico (Timeframe):", ["1m", "5m", "15m", "1h"])
 stop_loss_pct = st.sidebar.number_input("Stop Loss (%):", min_value=0.1, max_value=5.0, value=2.0, step=0.1) / 100
 
 st.sidebar.divider()
+
+# --- COTAÇÕES RÁPIDAS NA ESQUERDA ---
+st.sidebar.subheader("📈 Cotações Rápidas")
+acoes_lista = ['PETR4', 'VALE3', 'ITUB4', 'BBDC4', 'ABEV3', 'WEGE3']
+
+def buscar_dados(ativo):
+    ticker_brapi = ativo.replace(".SA", "")
+    try:
+        url = f"https://brapi.dev/api/quote/{ticker_brapi}?range=1d&interval={timeframe}"
+        resposta = requests.get(url, timeout=5)
+        dados = resposta.json()
+        if dados.get('results'):
+            info = dados['results'][0]
+            preco = info.get('regularMarketPrice', 0)
+            variacao = info.get('regularMarketChangePercent', 0)
+            return preco, variacao
+    except:
+        pass
+    return None, 0
+
+for ativo_nome in acoes_lista:
+    preco, var = buscar_dados(ativo_nome)
+    if preco:
+        st.sidebar.metric(ativo_nome, f"R$ {preco:.2f}", f"{var:+.2f}%")
+    else:
+        st.sidebar.metric(ativo_nome, "Offline", "")
+
+st.sidebar.divider()
+
+# Alerta Sonoro
 st.sidebar.subheader("🔊 Alerta Sonoro")
 som_ativo = st.sidebar.checkbox("Ativar som nos sinais", value=False)
 
 st.sidebar.divider()
+
+# Alpaca (Paper Trading)
 st.sidebar.subheader("🤖 Alpaca (Paper Trading)")
 try:
     alpaca_key = st.secrets["ALPACA_API_KEY"]
@@ -59,41 +92,9 @@ else:
     st.sidebar.info("Configure as chaves da Alpaca nos Secrets.")
     trade_client = None
 
-# --- FUNÇÕES ---
-def buscar_dados(ativo):
-    ticker_brapi = ativo.replace(".SA", "")
-    try:
-        url = f"https://brapi.dev/api/quote/{ticker_brapi}?range=1d&interval={timeframe}"
-        resposta = requests.get(url, timeout=5)
-        dados = resposta.json()
-        if dados.get('results'):
-            info = dados['results'][0]
-            preco = info.get('regularMarketPrice', 0)
-            variacao = info.get('regularMarketChangePercent', 0)
-            return preco, variacao
-    except:
-        pass
-    return None, 0
-
-# --- ÁREA CENTRAL (DIREITA) ---
+# --- ÁREA CENTRAL (DIREITA) APENAS O GRÁFICO ---
 st.title(f"🐊 Análise: {ativo_grafico.replace('.SA', '')} ({timeframe})")
 
-# Lista de ativos rápida no topo (Ações)
-st.markdown("### 📈 Cotações Rápidas")
-col_acoes = st.columns(6)
-acoes_lista = ['PETR4', 'VALE3', 'ITUB4', 'BBDC4', 'ABEV3', 'WEGE3']
-
-for i, ativo_nome in enumerate(acoes_lista):
-    preco, var = buscar_dados(ativo_nome)
-    with col_acoes[i]:
-        if preco:
-            st.metric(ativo_nome, f"R$ {preco:.2f}", f"{var:+.2f}%")
-        else:
-            st.metric(ativo_nome, "Offline", "")
-
-st.divider()
-
-# --- GRÁFICO PRINCIPAL ---
 try:
     df = yf.download(ativo_grafico, period="1d", interval=timeframe, progress=False)
     if not df.empty:
