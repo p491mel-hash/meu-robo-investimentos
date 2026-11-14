@@ -2,25 +2,19 @@ import streamlit as st
 import requests
 import pandas as pd
 from datetime import datetime
-import time
 
-# Configuração da página (tem que ser a primeira coisa)
-st.set_page_config(page_title="Robô de Day Trade Web", layout="wide", page_icon="🤖")
+# Configuração da página
+st.set_page_config(page_title="Super Robô - Global", layout="wide", page_icon="🌎")
 
-st.title("🤖 Super Robô de Day Trade - Versão Web")
-st.markdown("Monitoramento de Força (BOP) e Stop Loss em tempo real.")
+st.title("🌎 Super Robô de Day Trade - Global")
+st.markdown("Monitoramento de Força (BOP) em Ações, FIIs, Commodities e Índices Internacionais.")
 
 # --- BARRA LATERAL (Configurações) ---
 st.sidebar.header("Configurações")
-ativos_input = st.sidebar.text_input("Ativos (separados por vírgula):", "PETR4, VALE3, ITUB4, HGLG11, MXRF11")
 intervalo = st.sidebar.slider("Atualizar a cada (segundos):", 10, 60, 15)
 stop_loss_pct = st.sidebar.number_input("Stop Loss (%):", min_value=0.1, max_value=5.0, value=2.0, step=0.1) / 100
 
-# Botão para forçar atualização
-if st.sidebar.button("🔄 Atualizar Agora"):
-    st.rerun()
-
-# --- FUNÇÕES DE DADOS (As mesmas do robô desktop) ---
+# --- FUNÇÃO DE BUSCA (A mesma de antes) ---
 def buscar_dados(ativo):
     try:
         url = f"https://brapi.dev/api/quote/{ativo}?range=1d&interval=5m"
@@ -46,23 +40,15 @@ def buscar_dados(ativo):
         pass
     return None, 0, 50, 50
 
-# --- INTERFACE PRINCIPAL ---
-ativos = [a.strip().upper() for a in ativos_input.split(",") if a.strip()]
-
-# Cria colunas para exibir os ativos
-colunas = st.columns(len(ativos)) if ativos else []
-
-for i, ativo in enumerate(ativos):
+# --- FUNÇÃO PARA DESENHAR O CARD DO ATIVO ---
+def mostrar_ativo(ativo, coluna):
     preco, var, f_compra, f_venda = buscar_dados(ativo)
     
-    with colunas[i]:
+    with coluna:
         st.subheader(ativo)
         if preco is not None:
-            # Mostra o preço com cor
-            cor = "normal" if var == 0 else ("inverse" if var > 0 else "off")
             st.metric(label="Preço", value=f"R$ {preco:.2f}", delta=f"{var:+.2f}%")
             
-            # Barras de Força (usando o componente de progresso do Streamlit)
             st.write("🟦 Força de Compra:")
             st.progress(min(int(f_compra), 100))
             st.caption(f"{f_compra:.0f}%")
@@ -71,7 +57,6 @@ for i, ativo in enumerate(ativos):
             st.progress(min(int(f_venda), 100))
             st.caption(f"{f_venda:.0f}%")
             
-            # Lógica de Sinal
             if f_compra > 65 and var > 0.3:
                 st.success(">>> COMPRA! <<<")
                 preco_stop = preco * (1 - stop_loss_pct)
@@ -81,21 +66,39 @@ for i, ativo in enumerate(ativos):
             else:
                 st.info("Aguardar")
         else:
-            st.error("Erro ao buscar dados")
+            st.error("Erro ao buscar (Limite da API)")
 
-# --- GRÁFICO DO PRIMEIRO ATIVO ---
-if ativos:
-    st.divider()
-    st.subheader(f"📈 Gráfico do {ativos[0]}")
-    
-    # Buscar histórico simulado para desenhar (já que a API não dá o gráfico pronto)
-    try:
-        # Aqui usamos uma lógica simples para criar um gráfico de linha
-        # Na prática, seria ideal ter um endpoint de histórico
-        dados_grafico = pd.DataFrame({
-            'Tempo': [datetime.now().strftime('%H:%M:%S')],
-            'Preço': [buscar_dados(ativos[0])[0]]
-        })
-        st.line_chart(dados_grafico.set_index('Tempo'))
-    except:
-        st.info("Aguardando dados para desenhar o gráfico...")
+# --- CRIAÇÃO DAS ABAS ---
+aba_acoes, aba_fiis, aba_commodities, aba_internacional = st.tabs([
+    "📈 Ações B3", "🏢 FIIs Nacionais", "🛢️ Commodities", "🌍 Internacional"
+])
+
+# 1. Aba de Ações
+with aba_acoes:
+    acoes = ['PETR4', 'VALE3', 'ITUB4', 'BBDC4', 'ABEV3', 'WEGE3']
+    colunas = st.columns(len(acoes))
+    for i, ativo in enumerate(acoes):
+        mostrar_ativo(ativo, colunas[i])
+
+# 2. Aba de FIIs Nacionais
+with aba_fiis:
+    fiis = ['HGLG11', 'KNRI11', 'MXRF11', 'XPML11', 'VRTA11']
+    colunas = st.columns(len(fiis))
+    for i, ativo in enumerate(fiis):
+        mostrar_ativo(ativo, colunas[i])
+
+# 3. Aba de Commodities (ETFs e BDRs)
+with aba_commodities:
+    st.info("ETFs e BDRs de Commodities negociados na B3.")
+    commodities = ['CMDB11', 'GOLD11', 'BIAU39', 'BSLV39', 'BCOM39', 'BBOI11']
+    colunas = st.columns(len(commodities))
+    for i, ativo in enumerate(commodities):
+        mostrar_ativo(ativo, colunas[i])
+
+# 4. Aba Internacional (Índices e FIIs Globais via BDRs)
+with aba_internacional:
+    st.info("ETFs Internacionais negociados na B3.")
+    internacional = ['IVVB11', 'SPXI11', 'BEWJ39', 'BEWG39', 'ACWX39']
+    colunas = st.columns(len(internacional))
+    for i, ativo in enumerate(internacional):
+        mostrar_ativo(ativo, colunas[i])
