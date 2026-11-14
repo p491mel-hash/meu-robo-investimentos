@@ -21,7 +21,7 @@ if tempo_decorrido > 30:
 # --- BARRA LATERAL ---
 st.sidebar.header("Configurações")
 stop_loss_pct = st.sidebar.number_input("Stop Loss (%):", min_value=0.1, max_value=5.0, value=2.0, step=0.1) / 100
-ativo_grafico = st.sidebar.selectbox("Ativo para o Gráfico:", ["PETR4", "VALE3", "ITUB4"])
+ativo_grafico = st.sidebar.selectbox("Ativo para o Gráfico:", ["PETR4", "VALE3", "ITUB4", "BOVA11", "USDB11"])
 timeframe = st.sidebar.selectbox("Tempo Gráfico (Timeframe):", ["1m", "5m", "15m", "1h"])
 
 # --- FUNÇÕES DE BUSCA ---
@@ -75,8 +75,8 @@ def mostrar_ativo(ativo, coluna):
             st.error("Erro ao buscar")
 
 # --- ABAS ---
-aba_acoes, aba_fiis, aba_commodities, aba_internacional = st.tabs([
-    "📈 Ações B3", "🏢 FIIs Nacionais", "🛢️ Commodities", "🌍 Internacional"
+aba_acoes, aba_fiis, aba_commodities, aba_internacional, aba_indices = st.tabs([
+    "📈 Ações B3", "🏢 FIIs", "🛢️ Commodities", "🌍 Internacional", "💵 Dólar e Índice"
 ])
 
 with aba_acoes:
@@ -105,12 +105,19 @@ with aba_internacional:
     for i, ativo in enumerate(internacional):
         mostrar_ativo(ativo, colunas[i])
 
+# NOVA ABA: Dólar e Índice (Usando ETFs)
+with aba_indices:
+    st.info("Para acompanhar o Dólar e o Ibovespa em tempo real no plano gratuito, usamos os ETFs (BOVA11 e USDB11).")
+    indices = ['BOVA11', 'USDB11', 'BOVV11', 'DOLA11']
+    colunas = st.columns(len(indices))
+    for i, ativo in enumerate(indices):
+        mostrar_ativo(ativo, colunas[i])
+
 # --- GRÁFICO PROFISSIONAL (JACARÉ + FORÇA) ---
 st.divider()
 st.subheader(f"🐊 Análise de Fluxo: {ativo_grafico} ({timeframe})")
 
 try:
-    # MUDANÇA IMPORTANTE: range=1d para pegar só o dia de hoje (gráfico contínuo)
     url_hist = f"https://brapi.dev/api/v2/stocks/historical?symbols={ativo_grafico}&range=1d&interval={timeframe}"
     resp_hist = requests.get(url_hist, timeout=10)
     dados_hist = resp_hist.json()
@@ -122,11 +129,10 @@ try:
             df = pd.DataFrame(candles)
             df['date'] = pd.to_datetime(df['date'], unit='s')
             
-            # Filtra apenas o horário de pregão (10h às 17h) para tirar os vazios
+            # Filtra horário de pregão
             df = df[(df['date'].dt.hour >= 10) & (df['date'].dt.hour <= 17)]
             
-            # --- CÁLCULO DO JACARÉ (ALLIGATOR) ---
-            # SMMA (Smoothed Moving Average) é uma EMA mais lenta, fica mais suave
+            # --- CÁLCULO DO JACARÉ ---
             df['mandibula'] = df['close'].ewm(span=13, adjust=False).mean().shift(8)
             df['dentes'] = df['close'].ewm(span=8, adjust=False).mean().shift(5)
             df['labios'] = df['close'].ewm(span=5, adjust=False).mean().shift(3)
@@ -138,15 +144,13 @@ try:
             df['forca_compra'] = (df['bop'] + 1) * 50
             df['forca_compra'] = df['forca_compra'].clip(0, 100)
             
-            # Cores para as barras (Azul para Compra, Vermelho para Venda)
             cores_forca = ['#4da6ff' if fc >= 50 else '#ff4d4d' for fc in df['forca_compra']]
             
-            # --- CRIA O GRÁFICO DUPLO ---
             fig = make_subplots(
                 rows=2, cols=1, 
                 shared_xaxes=True, 
                 vertical_spacing=0.03,
-                row_heights=[0.75, 0.25] # 75% velas, 25% força
+                row_heights=[0.75, 0.25]
             )
             
             # 1. Velas
@@ -157,9 +161,9 @@ try:
             ), row=1, col=1)
             
             # 2. Jacaré
-            fig.add_trace(go.Scatter(x=df['date'], y=df['mandibula'], line=dict(color='#4da6ff', width=1.5), name='Mandíbula (Azul)'), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df['date'], y=df['dentes'], line=dict(color='#ff4d4d', width=1.5), name='Dentes (Vermelho)'), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df['date'], y=df['labios'], line=dict(color='#00ff88', width=1.5), name='Lábios (Verde)'), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df['date'], y=df['mandibula'], line=dict(color='#4da6ff', width=1.5), name='Mandíbula'), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df['date'], y=df['dentes'], line=dict(color='#ff4d4d', width=1.5), name='Dentes'), row=1, col=1)
+            fig.add_trace(go.Scatter(x=df['date'], y=df['labios'], line=dict(color='#00ff88', width=1.5), name='Lábios'), row=1, col=1)
             
             # 3. Stop Loss
             ultimo_preco = df['close'].iloc[-1]
@@ -169,16 +173,13 @@ try:
             # 4. Barras de Força
             fig.add_trace(go.Bar(
                 x=df['date'], y=df['forca_compra'],
-                name='Força (Azul=Compra / Vermelho=Venda)',
-                marker_color=cores_forca,
+                name='Força', marker_color=cores_forca,
                 hovertemplate='Força: %{y:.1f}%<extra></extra>',
                 showlegend=False
             ), row=2, col=1)
             
-            # Linha de 50% no gráfico de força
             fig.add_hline(y=50, line_dash="dot", line_color="gray", row=2, col=1)
             
-            # Layout Limpo
             fig.update_layout(
                 template='plotly_dark',
                 xaxis_rangeslider_visible=False,
@@ -188,8 +189,8 @@ try:
             )
             
             fig.update_xaxes(showticklabels=False, row=1, col=1)
-            fig.update_yaxes(title_text="Preço (R$)", row=1, col=1, side="right")
-            fig.update_yaxes(title_text="Força (%)", range=[0, 100], row=2, col=1, side="right")
+            fig.update_yaxes(title_text="Preço", row=1, col=1, side="right")
+            fig.update_yaxes(title_text="Força", range=[0, 100], row=2, col=1, side="right")
             
             st.plotly_chart(fig, use_container_width=True)
             
