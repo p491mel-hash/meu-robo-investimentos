@@ -41,7 +41,6 @@ acoes_lista = ['PETR4', 'VALE3', 'ITUB4', 'BBDC4', 'ABEV3', 'WEGE3']
 
 # --- FUNÇÃO DE BUSCA (YAHOO FINANCE) ---
 def buscar_dados_yahoo(ativo):
-    # Adiciona .SA se não tiver (para ações e FIIs brasileiros)
     if not ativo.endswith(".SA") and not ativo.endswith("=X") and not ativo.endswith("=F"):
         ticker = f"{ativo}.SA"
     else:
@@ -113,6 +112,7 @@ def mostrar_card_ativo(ativo, coluna, timeframe="1d"):
             st.write("🟦 Força de Compra:")
             st.progress(min(int(f_compra), 100))
             st.caption(f"{f_compra:.0f}%")
+            
             st.write("🟥 Força de Venda:")
             st.progress(min(int(f_venda), 100))
             st.caption(f"{f_venda:.0f}%")
@@ -156,6 +156,8 @@ with aba_daytrade:
                 df['bop'] = (df['Close'] - df['Open']) / df['range']
                 df['forca_compra'] = (df['bop'] + 1) * 50
                 df['forca_compra'] = df['forca_compra'].clip(0, 100)
+                
+                # CORREÇÃO: Cores para as barras de força. Azul para compra (>50) e VERMELHO para venda (<50)
                 cores_forca = ['#4da6ff' if fc >= 50 else '#ff4d4d' for fc in df['forca_compra']]
                 
                 delta = df['Close'].diff()
@@ -214,6 +216,7 @@ with aba_daytrade:
                 linha_stop = ultimo_preco * (1 - stop_loss_pct)
                 fig.add_hline(y=linha_stop, line_dash="dash", line_color="#ffcc00", annotation_text=f"Stop: R$ {linha_stop:.2f}", annotation_position="top right", row=1, col=1)
                 
+                # AQUI A CORREÇÃO: O gráfico de força usa as cores definidas acima (cores_forca)
                 fig.add_trace(go.Bar(x=df['date'], y=df['forca_compra'], name='Força', marker_color=cores_forca, showlegend=False), row=2, col=1)
                 fig.add_hline(y=50, line_dash="dot", line_color="gray", row=2, col=1)
                 
