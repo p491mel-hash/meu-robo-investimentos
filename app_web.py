@@ -30,14 +30,19 @@ if time.time() - st.session_state.last_update > 30:
 st.sidebar.title("🌎 Super Robô")
 
 # --- LISTA EXPANDIDA DE ATIVOS PRINCIPAIS ---
-# Ações, FIIs, Commodities e Internacionais juntos para o gráfico
 lista_ativos = [
+    # Dólar e Índice
+    "USDB11.SA", "BOVA11.SA",
+    
     # Ações
     "PETR4.SA", "VALE3.SA", "ITUB4.SA", "BBDC4.SA", "ABEV3.SA", "WEGE3.SA", "BBAS3.SA", "MGLU3.SA", "B3SA3.SA",
+    
     # FIIs
     "HGLG11.SA", "KNRI11.SA", "MXRF11.SA", "XPML11.SA", "VRTA11.SA", "BTLG11.SA", "VISC11.SA", "XPLG11.SA",
+    
     # Commodities
     "CMDB11.SA", "GOLD11.SA", "BIAU39.SA", "BSLV39.SA", "BCOM39.SA", "BBOI11.SA", "CORN11.SA",
+    
     # Internacionais
     "IVVB11.SA", "SPXI11.SA", "BEWJ39.SA", "BEWG39.SA", "ACWX39.SA", "NASD11.SA", "TECK11.SA"
 ]
@@ -115,14 +120,12 @@ def mostrar_card_ativo(ativo, coluna, timeframe="1d"):
         if preco is not None:
             st.metric(label="Preço", value=f"R$ {preco:.2f}", delta=f"{var:+.2f}%")
             
-            # Simulação de Força (BOP simplificado)
             if var > 0:
                 f_compra = min(100, 50 + (var * 10))
             else:
                 f_compra = max(0, 50 + (var * 10))
             f_venda = 100 - f_compra
             
-            # --- BARRA DE FORÇA DE COMPRA (AZUL) ---
             st.markdown(f"""
             <div style="margin-bottom: 10px;">
                 <p style="margin: 0; color: #ffffff;">🟦 Força de Compra:</p>
@@ -133,7 +136,6 @@ def mostrar_card_ativo(ativo, coluna, timeframe="1d"):
             </div>
             """, unsafe_allow_html=True)
 
-            # --- BARRA DE FORÇA DE VENDA (VERMELHA) ---
             st.markdown(f"""
             <div style="margin-bottom: 10px;">
                 <p style="margin: 0; color: #ffffff;">🟥 Força de Venda:</p>
