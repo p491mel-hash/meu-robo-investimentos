@@ -39,23 +39,28 @@ st.sidebar.divider()
 st.sidebar.subheader("📈 Cotações Rápidas")
 acoes_lista = ['PETR4', 'VALE3', 'ITUB4', 'BBDC4', 'ABEV3', 'WEGE3']
 
-def buscar_dados_brapi(ativo):
-    ticker_brapi = ativo.replace(".SA", "")
+# --- FUNÇÃO DE BUSCA (YAHOO FINANCE) ---
+def buscar_dados_yahoo(ativo):
+    # Adiciona .SA se não tiver (para ações e FIIs brasileiros)
+    if not ativo.endswith(".SA") and not ativo.endswith("=X") and not ativo.endswith("=F"):
+        ticker = f"{ativo}.SA"
+    else:
+        ticker = ativo
+        
     try:
-        url = f"https://brapi.dev/api/quote/{ticker_brapi}?range=1d&interval=1d"
-        resposta = requests.get(url, timeout=5)
-        dados = resposta.json()
-        if dados.get('results'):
-            info = dados['results'][0]
-            preco = info.get('regularMarketPrice', 0)
-            variacao = info.get('regularMarketChangePercent', 0)
+        t = yf.Ticker(ticker)
+        info = t.fast_info
+        preco = info['lastPrice']
+        anterior = info['previousClose']
+        if preco and anterior:
+            variacao = ((preco - anterior) / anterior) * 100
             return preco, variacao
     except:
         pass
     return None, 0
 
 for ativo_nome in acoes_lista:
-    preco, var = buscar_dados_brapi(ativo_nome)
+    preco, var = buscar_dados_yahoo(ativo_nome)
     if preco:
         st.sidebar.metric(ativo_nome, f"R$ {preco:.2f}", f"{var:+.2f}%")
     else:
@@ -90,14 +95,15 @@ else:
     st.sidebar.info("Configure as chaves da Alpaca nos Secrets.")
     trade_client = None
 
-# --- FUNÇÃO PARA OS CARDS DE FII/AÇÕES ---
+# --- FUNÇÃO PARA OS CARDS ---
 def mostrar_card_ativo(ativo, coluna, timeframe="1d"):
-    preco, var = buscar_dados_brapi(ativo)
+    preco, var = buscar_dados_yahoo(ativo)
     with coluna:
         st.subheader(ativo)
         if preco is not None:
             st.metric(label="Preço", value=f"R$ {preco:.2f}", delta=f"{var:+.2f}%")
-            # Simulação de Força (BOP simplificado para o card)
+            
+            # Simulação de Força (BOP simplificado)
             if var > 0:
                 f_compra = min(100, 50 + (var * 10))
             else:
@@ -126,7 +132,7 @@ aba_daytrade, aba_swing, aba_fiis, aba_commodities, aba_internacional = st.tabs(
     "📊 Day Trade", "📈 Swing Trade", "🏢 FIIs", "🛢️ Commodities", "🌍 Internacional"
 ])
 
-# --- ABA DAY TRADE (Curto Prazo) ---
+# --- ABA DAY TRADE ---
 with aba_daytrade:
     st.header(f"🐊 Análise de Fluxo: {ativo_grafico.replace('.SA', '')} (1m)")
     
@@ -228,7 +234,7 @@ with aba_daytrade:
     except Exception as e:
         st.error(f"Erro no Day Trade: {e}")
 
-# --- ABA SWING TRADE (Médio Prazo) ---
+# --- ABA SWING TRADE ---
 with aba_swing:
     st.header(f"📈 Estratégia Swing Trade: {ativo_grafico.replace('.SA', '')}")
     
