@@ -29,8 +29,21 @@ if time.time() - st.session_state.last_update > 30:
 # --- BARRA LATERAL (ESQUERDA) ---
 st.sidebar.title("🌎 Super Robô")
 
+# --- LISTA EXPANDIDA DE ATIVOS PRINCIPAIS ---
+# Ações, FIIs, Commodities e Internacionais juntos para o gráfico
+lista_ativos = [
+    # Ações
+    "PETR4.SA", "VALE3.SA", "ITUB4.SA", "BBDC4.SA", "ABEV3.SA", "WEGE3.SA", "BBAS3.SA", "MGLU3.SA", "B3SA3.SA",
+    # FIIs
+    "HGLG11.SA", "KNRI11.SA", "MXRF11.SA", "XPML11.SA", "VRTA11.SA", "BTLG11.SA", "VISC11.SA", "XPLG11.SA",
+    # Commodities
+    "CMDB11.SA", "GOLD11.SA", "BIAU39.SA", "BSLV39.SA", "BCOM39.SA", "BBOI11.SA", "CORN11.SA",
+    # Internacionais
+    "IVVB11.SA", "SPXI11.SA", "BEWJ39.SA", "BEWG39.SA", "ACWX39.SA", "NASD11.SA", "TECK11.SA"
+]
+
 st.sidebar.header("Configurações")
-ativo_grafico = st.sidebar.selectbox("Ativo Principal:", ["PETR4.SA", "VALE3.SA", "ITUB4.SA", "BOVA11.SA", "USDB11.SA"])
+ativo_grafico = st.sidebar.selectbox("Ativo Principal:", lista_ativos)
 stop_loss_pct = st.sidebar.number_input("Stop Loss (%):", min_value=0.5, max_value=10.0, value=2.0, step=0.5) / 100
 
 st.sidebar.divider()
@@ -98,7 +111,7 @@ else:
 def mostrar_card_ativo(ativo, coluna, timeframe="1d"):
     preco, var = buscar_dados_yahoo(ativo)
     with coluna:
-        st.subheader(ativo)
+        st.subheader(ativo.replace(".SA", ""))
         if preco is not None:
             st.metric(label="Preço", value=f"R$ {preco:.2f}", delta=f"{var:+.2f}%")
             
@@ -301,7 +314,7 @@ with aba_swing:
 # --- ABA FIIs ---
 with aba_fiis:
     st.header("🏢 Fundos Imobiliários")
-    fiis = ['HGLG11', 'KNRI11', 'MXRF11', 'XPML11', 'VRTA11']
+    fiis = ['HGLG11', 'KNRI11', 'MXRF11', 'XPML11', 'VRTA11', 'BTLG11', 'VISC11', 'XPLG11']
     colunas = st.columns(len(fiis))
     for i, ativo in enumerate(fiis):
         mostrar_card_ativo(ativo, colunas[i])
@@ -309,7 +322,7 @@ with aba_fiis:
 # --- ABA COMMODITIES ---
 with aba_commodities:
     st.header("🛢️ Commodities")
-    commodities = ['CMDB11', 'GOLD11', 'BIAU39', 'BSLV39', 'BCOM39', 'BBOI11']
+    commodities = ['CMDB11', 'GOLD11', 'BIAU39', 'BSLV39', 'BCOM39', 'BBOI11', 'CORN11']
     colunas = st.columns(len(commodities))
     for i, ativo in enumerate(commodities):
         mostrar_card_ativo(ativo, colunas[i])
@@ -317,7 +330,7 @@ with aba_commodities:
 # --- ABA INTERNACIONAL ---
 with aba_internacional:
     st.header("🌍 Internacional")
-    internacional = ['IVVB11', 'SPXI11', 'BEWJ39', 'BEWG39', 'ACWX39']
+    internacional = ['IVVB11', 'SPXI11', 'BEWJ39', 'BEWG39', 'ACWX39', 'NASD11', 'TECK11']
     colunas = st.columns(len(internacional))
     for i, ativo in enumerate(internacional):
         mostrar_card_ativo(ativo, colunas[i])
