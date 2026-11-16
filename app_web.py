@@ -94,7 +94,7 @@ else:
     st.sidebar.info("Configure as chaves da Alpaca nos Secrets.")
     trade_client = None
 
-# --- FUNÇÃO PARA OS CARDS ---
+# --- FUNÇÃO PARA OS CARDS (COM BARRA VERMELHA) ---
 def mostrar_card_ativo(ativo, coluna, timeframe="1d"):
     preco, var = buscar_dados_yahoo(ativo)
     with coluna:
@@ -109,13 +109,27 @@ def mostrar_card_ativo(ativo, coluna, timeframe="1d"):
                 f_compra = max(0, 50 + (var * 10))
             f_venda = 100 - f_compra
             
-            st.write("🟦 Força de Compra:")
-            st.progress(min(int(f_compra), 100))
-            st.caption(f"{f_compra:.0f}%")
-            
-            st.write("🟥 Força de Venda:")
-            st.progress(min(int(f_venda), 100))
-            st.caption(f"{f_venda:.0f}%")
+            # --- BARRA DE FORÇA DE COMPRA (AZUL) ---
+            st.markdown(f"""
+            <div style="margin-bottom: 10px;">
+                <p style="margin: 0; color: #ffffff;">🟦 Força de Compra:</p>
+                <div style="width: 100%; background-color: #333; border-radius: 5px; height: 10px;">
+                    <div style="width: {f_compra}%; background-color: #4da6ff; height: 10px; border-radius: 5px;"></div>
+                </div>
+                <p style="margin: 0; font-size: 12px; color: #888;">{f_compra:.0f}%</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # --- BARRA DE FORÇA DE VENDA (VERMELHA) ---
+            st.markdown(f"""
+            <div style="margin-bottom: 10px;">
+                <p style="margin: 0; color: #ffffff;">🟥 Força de Venda:</p>
+                <div style="width: 100%; background-color: #333; border-radius: 5px; height: 10px;">
+                    <div style="width: {f_venda}%; background-color: #ff4d4d; height: 10px; border-radius: 5px;"></div>
+                </div>
+                <p style="margin: 0; font-size: 12px; color: #888;">{f_venda:.0f}%</p>
+            </div>
+            """, unsafe_allow_html=True)
             
             if f_compra > 65 and var > 0.5:
                 st.success(">>> COMPRA! <<<")
@@ -156,8 +170,6 @@ with aba_daytrade:
                 df['bop'] = (df['Close'] - df['Open']) / df['range']
                 df['forca_compra'] = (df['bop'] + 1) * 50
                 df['forca_compra'] = df['forca_compra'].clip(0, 100)
-                
-                # CORREÇÃO: Cores para as barras de força. Azul para compra (>50) e VERMELHO para venda (<50)
                 cores_forca = ['#4da6ff' if fc >= 50 else '#ff4d4d' for fc in df['forca_compra']]
                 
                 delta = df['Close'].diff()
@@ -205,7 +217,6 @@ with aba_daytrade:
                     som = np.sin(880 * t * 2 * np.pi) * 0.5
                     st.audio(som, sample_rate=sample_rate, format="audio/wav")
 
-                # Gráfico Day Trade
                 fig = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.5, 0.15, 0.15, 0.2])
                 fig.add_trace(go.Candlestick(x=df['date'], open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Preço', increasing_line_color='#00ff88', decreasing_line_color='#ff4d4d', showlegend=False), row=1, col=1)
                 fig.add_trace(go.Scatter(x=df['date'], y=df['mandibula'], line=dict(color='#4da6ff', width=1.5), name='Mandíbula'), row=1, col=1)
@@ -216,7 +227,6 @@ with aba_daytrade:
                 linha_stop = ultimo_preco * (1 - stop_loss_pct)
                 fig.add_hline(y=linha_stop, line_dash="dash", line_color="#ffcc00", annotation_text=f"Stop: R$ {linha_stop:.2f}", annotation_position="top right", row=1, col=1)
                 
-                # AQUI A CORREÇÃO: O gráfico de força usa as cores definidas acima (cores_forca)
                 fig.add_trace(go.Bar(x=df['date'], y=df['forca_compra'], name='Força', marker_color=cores_forca, showlegend=False), row=2, col=1)
                 fig.add_hline(y=50, line_dash="dot", line_color="gray", row=2, col=1)
                 
