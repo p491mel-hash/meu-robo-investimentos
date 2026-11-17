@@ -7,3 +7,4 @@ requests
 numpy
 web3
 alpaca-py
+backtesting
