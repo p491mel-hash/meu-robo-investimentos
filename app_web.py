@@ -102,7 +102,7 @@ else:
     st.sidebar.info("Configure as chaves da Alpaca nos Secrets.")
     trade_client = None
 
-# --- FUNÇÃO PARA OS CARDS (COM AUTOMAÇÃO E TRAILING STOP) ---
+# --- FUNÇÃO PARA OS CARDS ---
 def mostrar_card_ativo(ativo, coluna, timeframe="1d"):
     preco, var = buscar_dados_yahoo(ativo)
     with coluna:
@@ -116,7 +116,6 @@ def mostrar_card_ativo(ativo, coluna, timeframe="1d"):
                 f_compra = max(0, 50 + (var * 10))
             f_venda = 100 - f_compra
             
-            # --- BARRAS DE FORÇA (HTML) ---
             st.markdown(f"""
             <div style="margin-bottom: 10px;">
                 <p style="margin: 0; color: #ffffff;">🟦 Força de Compra:</p>
@@ -136,7 +135,6 @@ def mostrar_card_ativo(ativo, coluna, timeframe="1d"):
             </div>
             """, unsafe_allow_html=True)
             
-            # --- SINAL E AUTOMAÇÃO ---
             sinal = "AGUARDAR"
             if f_compra > 65 and var > 0.5:
                 sinal = "COMPRA"
@@ -148,18 +146,15 @@ def mostrar_card_ativo(ativo, coluna, timeframe="1d"):
             else:
                 st.info("Aguardar")
             
-            # Caixinha de automação (só aparece se a Alpaca estiver configurada)
             if alpaca_configurada and trade_client:
                 auto_ativo = st.checkbox(f"🤖 Automatizar {ativo.replace('.SA', '')}", value=False)
                 use_trailing = st.checkbox(f"📈 Trailing Stop ({ativo.replace('.SA', '')})", value=False)
                 
                 if auto_ativo and sinal in ["COMPRA", "VENDA"]:
-                    # Mapeia o ativo brasileiro para um ticker americano (exemplo: SPY)
                     ticker_alpaca = "SPY" 
                     try:
                         if sinal == "COMPRA":
                             if use_trailing:
-                                # Ordem com Trailing Stop
                                 ordem = MarketOrderRequest(
                                     symbol=ticker_alpaca, qty=1, side=OrderSide.BUY, time_in_force=TimeInForce.DAY,
                                     order_class="oto",
@@ -527,4 +522,50 @@ with aba_backtest:
                     
                     class SwingStrategy(Strategy):
                         def init(self):
-                            self.ema50 = self.I(lambda x: pd
+                            self.ema50 = self.I(lambda x: pd.Series(x).ewm(span=50, adjust=False).mean(), self.data.Close)
+                            self.ema200 = self.I(lambda x: pd.Series(x).ewm(span=200, adjust=False).mean(), self.data.Close)
+                            self.rsi = self.I(self.calc_rsi, self.data.Close)
+                        
+                        def calc_rsi(self, close):
+                            delta = pd.Series(close).diff()
+                            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                            rs = gain / loss
+                            return 100 - (100 / (1 + rs))
+                        
+                        def next(self):
+                            if len(self.data) < 200:
+                                return
+                            if (self.data.Close[-1] > self.ema200[-1] and 
+                                self.ema50[-1] > self.ema200[-1] and 
+                                40 < self.rsi[-1] < 70 and 
+                                not self.position):
+                                self.buy()
+                            elif self.position:
+                                if self.rsi[-1] > 70 or self.data.Close[-1] < self.ema50[-1]:
+                                    self.position.close()
+                    
+                    bt = Backtest(df_bt, SwingStrategy, cash=10000, commission=.002, exclusive_orders=True)
+                    stats = bt.run()
+                    
+                    st.subheader("📊 Resultados do Backtest")
+                    col_res1, col_res2, col_res3, col_res4 = st.columns(4)
+                    with col_res1:
+                        st.metric("Retorno Total", f"{stats['Return [%]']:.2f}%")
+                    with col_res2:
+                        st.metric("Taxa de Acerto", f"{stats['Win Rate [%]']:.2f}%")
+                    with col_res3:
+                        st.metric("Nº de Trades", f"{stats['# Trades']}")
+                    with col_res4:
+                        st.metric("Drawdown Máx.", f"{stats['Max. Drawdown [%]']:.2f}%")
+                    
+                    st.divider()
+                    st.subheader("📈 Gráfico da Curva de Capital")
+                    equity = stats['_equity_curve']
+                    fig_bt = go.Figure()
+                    fig_bt.add_trace(go.Scatter(x=equity.index, y=equity['Equity'], name='Capital', line=dict(color='#00ff88', width=2)))
+                    fig_bt.update_layout(template='plotly_dark', height=400, margin=dict(l=20, r=20, t=20, b=20))
+                    st.plotly_chart(fig_bt, use_container_width=True)
+                    
+            except Exception as e:
+                st.error(f"Erro no backtest: {e}")
