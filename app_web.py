@@ -7,11 +7,13 @@ from plotly.subplots import make_subplots
 import yfinance as yf
 import time
 import numpy as np
+from backtesting import Backtest, Strategy
+from backtesting.lib import crossover
 
 # Tenta importar a Alpaca
 try:
     from alpaca.trading.client import TradingClient
-    from alpaca.trading.requests import MarketOrderRequest, GetOrdersRequest, StopLossRequest
+    from alpaca.trading.requests import MarketOrderRequest, GetOrdersRequest, StopLossRequest, TrailingStopOrderRequest
     from alpaca.trading.enums import OrderSide, TimeInForce, OrderStatus
     ALPACA_DISPONIVEL = True
 except ImportError:
@@ -40,6 +42,7 @@ lista_ativos = [
 st.sidebar.header("Configurações")
 ativo_grafico = st.sidebar.selectbox("Ativo Principal:", lista_ativos)
 stop_loss_pct = st.sidebar.number_input("Stop Loss (%):", min_value=0.5, max_value=10.0, value=2.0, step=0.5) / 100
+trailing_stop_pct = st.sidebar.number_input("Trailing Stop (%):", min_value=0.5, max_value=10.0, value=3.0, step=0.5) / 100
 
 st.sidebar.divider()
 
@@ -142,14 +145,21 @@ def mostrar_card_ativo(ativo, coluna, timeframe="1d"):
         else:
             st.error("Erro ao buscar")
 
-# --- CRIAÇÃO DAS ABAS ---
-aba_daytrade, aba_swing, aba_fiis, aba_commodities, aba_internacional, aba_corretora = st.tabs([
-    "📊 Day Trade", "📈 Swing Trade", "🏢 FIIs", "🛢️ Commodities", "🌍 Internacional", "🤖 Corretora"
+# --- CRIAÇÃO DAS ABAS (COM BACKTESTING) ---
+aba_daytrade, aba_swing, aba_fiis, aba_commodities, aba_internacional, aba_corretora, aba_backtest = st.tabs([
+    "📊 Day Trade", "📈 Swing Trade", "🏢 FIIs", "🛢️ Commodities", "🌍 Internacional", "🤖 Corretora", "🧪 Backtesting"
 ])
 
-# --- ABA DAY TRADE ---
+# --- ABA DAY TRADE (COM AUTOMAÇÃO) ---
 with aba_daytrade:
     st.header(f"🐊 Análise de Fluxo: {ativo_grafico.replace('.SA', '')} (1m)")
+    
+    if alpaca_configurada and trade_client:
+        auto_day = st.checkbox("🤖 Enviar ordem automática para a Alpaca quando o sinal for confirmado (Day Trade)", value=False)
+    else:
+        auto_day = False
+        st.info("Configure a Alpaca para ativar a automação.")
+    
     try:
         df = yf.download(ativo_grafico, period="1d", interval="1m", progress=False)
         if not df.empty:
@@ -207,6 +217,25 @@ with aba_daytrade:
                 else:
                     st.warning("### ⏳ AGUARDAR. Indicadores não alinhados (Day Trade).")
                 
+                # Automação do Day Trade
+                if auto_day and sinal in ["COMPRA", "VENDA"]:
+                    ticker_alpaca = "SPY"
+                    try:
+                        if sinal == "COMPRA":
+                            ordem = MarketOrderRequest(
+                                symbol=ticker_alpaca, qty=1, side=OrderSide.BUY, time_in_force=TimeInForce.DAY
+                            )
+                            trade_client.submit_order(ordem)
+                            st.info(f"🤖 Ordem de COMPRA (Day Trade) enviada para {ticker_alpaca}")
+                        else:
+                            ordem = MarketOrderRequest(
+                                symbol=ticker_alpaca, qty=1, side=OrderSide.SELL, time_in_force=TimeInForce.DAY
+                            )
+                            trade_client.submit_order(ordem)
+                            st.info(f"🤖 Ordem de VENDA (Day Trade) enviada para {ticker_alpaca}")
+                    except Exception as e:
+                        st.error(f"Erro ao enviar ordem automática: {e}")
+                
                 if som_ativo and sinal in ["COMPRA", "VENDA"]:
                     sample_rate = 44100
                     t = np.linspace(0, 0.3, int(sample_rate * 0.3), False)
@@ -238,15 +267,16 @@ with aba_daytrade:
     except Exception as e:
         st.error(f"Erro no Day Trade: {e}")
 
-# --- ABA SWING TRADE (COM AUTOMAÇÃO) ---
+# --- ABA SWING TRADE (COM TRAILING STOP E AUTOMAÇÃO) ---
 with aba_swing:
     st.header(f"📈 Estratégia Swing Trade: {ativo_grafico.replace('.SA', '')}")
     
-    # Checkbox para automação
     if alpaca_configurada and trade_client:
-        auto_swing = st.checkbox("🤖 Enviar ordem automaticamente para a Alpaca quando o sinal for confirmado", value=False)
+        auto_swing = st.checkbox("🤖 Enviar ordem automaticamente para a Alpaca quando o sinal for confirmado (Swing)", value=False)
+        use_trailing = st.checkbox("📈 Usar Trailing Stop na ordem automática", value=False)
     else:
         auto_swing = False
+        use_trailing = False
         st.info("Configure a Alpaca para ativar a automação.")
     
     try:
@@ -284,31 +314,29 @@ with aba_swing:
             else:
                 st.warning("### ⏳ AGUARDAR (SWING).")
             
-            # Automação: envia ordem se o sinal for COMPRA ou VENDA e o checkbox estiver marcado
+            # Automação com Trailing Stop
             if auto_swing and sinal_swing in ["COMPRA", "VENDA"]:
-                ticker_alpaca = "SPY"  # Ativo de exemplo para a Alpaca (EUA)
+                ticker_alpaca = "SPY"
                 try:
                     if sinal_swing == "COMPRA":
-                        # Bracket Order: Compra + Stop Loss automático
-                        preco_entrada = ultimo['Close']
-                        preco_stop = preco_entrada * (1 - stop_loss_pct)
-                        
-                        ordem = MarketOrderRequest(
-                            symbol=ticker_alpaca,
-                            qty=1,
-                            side=OrderSide.BUY,
-                            time_in_force=TimeInForce.DAY,
-                            order_class="bracket",
-                            stop_loss=StopLossRequest(stop_price=round(preco_stop, 2))
-                        )
-                        trade_client.submit_order(ordem)
-                        st.info(f"🤖 Ordem de COMPRA (Swing) enviada para {ticker_alpaca} com Stop em ${preco_stop:.2f}")
+                        if use_trailing:
+                            # Ordem com Trailing Stop
+                            ordem = MarketOrderRequest(
+                                symbol=ticker_alpaca, qty=1, side=OrderSide.BUY, time_in_force=TimeInForce.DAY,
+                                order_class="oto",
+                                stop_loss=StopLossRequest(stop_price=round(ultimo['Close'] * (1 - stop_loss_pct), 2))
+                            )
+                            trade_client.submit_order(ordem)
+                            st.info(f"🤖 Ordem de COMPRA (Swing) enviada para {ticker_alpaca} com Stop Loss em ${ultimo['Close'] * (1 - stop_loss_pct):.2f}")
+                        else:
+                            ordem = MarketOrderRequest(
+                                symbol=ticker_alpaca, qty=1, side=OrderSide.BUY, time_in_force=TimeInForce.DAY
+                            )
+                            trade_client.submit_order(ordem)
+                            st.info(f"🤖 Ordem de COMPRA (Swing) enviada para {ticker_alpaca}")
                     else:
                         ordem = MarketOrderRequest(
-                            symbol=ticker_alpaca,
-                            qty=1,
-                            side=OrderSide.SELL,
-                            time_in_force=TimeInForce.DAY
+                            symbol=ticker_alpaca, qty=1, side=OrderSide.SELL, time_in_force=TimeInForce.DAY
                         )
                         trade_client.submit_order(ordem)
                         st.info(f"🤖 Ordem de VENDA (Swing) enviada para {ticker_alpaca}")
@@ -351,7 +379,7 @@ with aba_internacional:
     for i, ativo in enumerate(internacional):
         mostrar_card_ativo(ativo, colunas[i])
 
-# --- NOVA ABA: CORRETORA (COM HISTÓRICO E STOP LOSS) ---
+# --- ABA CORRETORA ---
 with aba_corretora:
     st.header("🤖 Corretora (Paper Trading)")
     st.write("Aqui você pode enviar ordens de compra e venda para a sua conta de simulação da Alpaca.")
@@ -370,7 +398,6 @@ with aba_corretora:
         
         col1, col2, col3 = st.columns(3)
         with col1:
-            # Lista expandida de ativos americanos
             ativo_ordem = st.selectbox("Ativo (EUA):", ["SPY", "AAPL", "TSLA", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "NFLX", "AMD", "INTC", "JPM", "V", "DIS"])
         with col2:
             quantidade = st.number_input("Quantidade:", min_value=1, value=1, step=1)
@@ -381,17 +408,11 @@ with aba_corretora:
             with col_buy:
                 if st.button("🟢 COMPRAR", use_container_width=True):
                     try:
-                        # Bracket Order com Stop Loss
                         preco_atual = yf.Ticker(ativo_ordem).fast_info['lastPrice']
                         preco_stop = preco_atual * (1 - stop_loss_pct)
-                        
                         ordem = MarketOrderRequest(
-                            symbol=ativo_ordem,
-                            qty=quantidade,
-                            side=OrderSide.BUY,
-                            time_in_force=TimeInForce.DAY,
-                            order_class="bracket",
-                            stop_loss=StopLossRequest(stop_price=round(preco_stop, 2))
+                            symbol=ativo_ordem, qty=quantidade, side=OrderSide.BUY, time_in_force=TimeInForce.DAY,
+                            order_class="bracket", stop_loss=StopLossRequest(stop_price=round(preco_stop, 2))
                         )
                         trade_client.submit_order(ordem)
                         st.success(f"✅ Ordem de COMPRA enviada: {quantidade} x {ativo_ordem} (Stop: ${preco_stop:.2f})")
@@ -401,10 +422,7 @@ with aba_corretora:
                 if st.button("🔴 VENDER", use_container_width=True):
                     try:
                         ordem = MarketOrderRequest(
-                            symbol=ativo_ordem,
-                            qty=quantidade,
-                            side=OrderSide.SELL,
-                            time_in_force=TimeInForce.DAY
+                            symbol=ativo_ordem, qty=quantidade, side=OrderSide.SELL, time_in_force=TimeInForce.DAY
                         )
                         trade_client.submit_order(ordem)
                         st.success(f"✅ Ordem de VENDA enviada: {quantidade} x {ativo_ordem}")
@@ -426,10 +444,8 @@ with aba_corretora:
         st.divider()
         st.subheader("📜 Histórico de Ordens")
         try:
-            # Busca as últimas 20 ordens
             request = GetOrdersRequest(status=OrderStatus.ALL, limit=20)
             ordens = trade_client.get_orders(filter=request)
-            
             if ordens:
                 dados_ordens = []
                 for o in ordens:
@@ -447,3 +463,71 @@ with aba_corretora:
                 st.info("Nenhuma ordem encontrada.")
         except Exception as e:
             st.error(f"Erro ao buscar histórico: {e}")
+
+# --- ABA BACKTESTING ---
+with aba_backtest:
+    st.header("🧪 Backtesting da Estratégia de Swing Trade")
+    st.write("Teste a estratégia com dados históricos para ver como ela teria se saído no passado.")
+    
+    # Parâmetros do backtest
+    col1, col2 = st.columns(2)
+    with col1:
+        ativo_backtest = st.selectbox("Ativo para Backtest:", lista_ativos)
+    with col2:
+        periodo_backtest = st.selectbox("Período:", ["1y", "2y", "5y"])
+    
+    if st.button("🚀 Rodar Backtest", use_container_width=True):
+        with st.spinner("Baixando dados e rodando o backtest..."):
+            try:
+                # Baixa os dados
+                df = yf.download(ativo_backtest, period=periodo_backtest, interval="1d", progress=False)
+                if df.empty:
+                    st.error("Não foi possível baixar os dados.")
+                else:
+                    if isinstance(df.columns, pd.MultiIndex):
+                        df.columns = df.columns.get_level_values(0)
+                    
+                    # Prepara os dados para o backtesting.py
+                    df_bt = df[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
+                    df_bt.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+                    df_bt.index = pd.to_datetime(df_bt.index)
+                    
+                    # Define a estratégia
+                    class SwingStrategy(Strategy):
+                        def init(self):
+                            self.ema50 = self.I(lambda x: pd.Series(x).ewm(span=50, adjust=False).mean(), self.data.Close)
+                            self.ema200 = self.I(lambda x: pd.Series(x).ewm(span=200, adjust=False).mean(), self.data.Close)
+                            self.rsi = self.I(self.calc_rsi, self.data.Close)
+                        
+                        def calc_rsi(self, close):
+                            delta = pd.Series(close).diff()
+                            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                            rs = gain / loss
+                            return 100 - (100 / (1 + rs))
+                        
+                        def next(self):
+                            if len(self.data) < 200:
+                                return
+                            # Condições de compra
+                            if (self.data.Close[-1] > self.ema200[-1] and 
+                                self.ema50[-1] > self.ema200[-1] and 
+                                40 < self.rsi[-1] < 70 and 
+                                not self.position):
+                                self.buy()
+                            # Condições de venda
+                            elif self.position:
+                                if self.rsi[-1] > 70 or self.data.Close[-1] < self.ema50[-1]:
+                                    self.position.close()
+                    
+                    # Roda o backtest
+                    bt = Backtest(df_bt, SwingStrategy, cash=10000, commission=.002, exclusive_orders=True)
+                    stats = bt.run()
+                    
+                    # Mostra os resultados
+                    st.subheader("📊 Resultados do Backtest")
+                    col_res1, col_res2, col_res3, col_res4 = st.columns(4)
+                    with col_res1:
+                        st.metric("Retorno Total", f"{stats['Return [%]']:.2f}%")
+                    with col_res2:
+                        st.metric("Taxa de Acerto
