@@ -31,19 +31,10 @@ st.sidebar.title("🌎 Super Robô")
 
 # --- LISTA EXPANDIDA DE ATIVOS PRINCIPAIS ---
 lista_ativos = [
-    # Dólar e Índice
     "USDB11.SA", "BOVA11.SA",
-    
-    # Ações
     "PETR4.SA", "VALE3.SA", "ITUB4.SA", "BBDC4.SA", "ABEV3.SA", "WEGE3.SA", "BBAS3.SA", "MGLU3.SA", "B3SA3.SA",
-    
-    # FIIs
     "HGLG11.SA", "KNRI11.SA", "MXRF11.SA", "XPML11.SA", "VRTA11.SA", "BTLG11.SA", "VISC11.SA", "XPLG11.SA",
-    
-    # Commodities
     "CMDB11.SA", "GOLD11.SA", "BIAU39.SA", "BSLV39.SA", "BCOM39.SA", "BBOI11.SA", "CORN11.SA",
-    
-    # Internacionais
     "IVVB11.SA", "SPXI11.SA", "BEWJ39.SA", "BEWG39.SA", "ACWX39.SA", "NASD11.SA", "TECK11.SA"
 ]
 
@@ -63,7 +54,6 @@ def buscar_dados_yahoo(ativo):
         ticker = f"{ativo}.SA"
     else:
         ticker = ativo
-        
     try:
         t = yf.Ticker(ticker)
         info = t.fast_info
@@ -112,14 +102,13 @@ else:
     st.sidebar.info("Configure as chaves da Alpaca nos Secrets.")
     trade_client = None
 
-# --- FUNÇÃO PARA OS CARDS (COM BARRA VERMELHA) ---
+# --- FUNÇÃO PARA OS CARDS ---
 def mostrar_card_ativo(ativo, coluna, timeframe="1d"):
     preco, var = buscar_dados_yahoo(ativo)
     with coluna:
         st.subheader(ativo.replace(".SA", ""))
         if preco is not None:
             st.metric(label="Preço", value=f"R$ {preco:.2f}", delta=f"{var:+.2f}%")
-            
             if var > 0:
                 f_compra = min(100, 50 + (var * 10))
             else:
@@ -135,7 +124,6 @@ def mostrar_card_ativo(ativo, coluna, timeframe="1d"):
                 <p style="margin: 0; font-size: 12px; color: #888;">{f_compra:.0f}%</p>
             </div>
             """, unsafe_allow_html=True)
-
             st.markdown(f"""
             <div style="margin-bottom: 10px;">
                 <p style="margin: 0; color: #ffffff;">🟥 Força de Venda:</p>
@@ -156,15 +144,14 @@ def mostrar_card_ativo(ativo, coluna, timeframe="1d"):
         else:
             st.error("Erro ao buscar")
 
-# --- CRIAÇÃO DAS ABAS ---
-aba_daytrade, aba_swing, aba_fiis, aba_commodities, aba_internacional = st.tabs([
-    "📊 Day Trade", "📈 Swing Trade", "🏢 FIIs", "🛢️ Commodities", "🌍 Internacional"
+# --- CRIAÇÃO DAS ABAS (COM A NOVA ABA CORRETORA) ---
+aba_daytrade, aba_swing, aba_fiis, aba_commodities, aba_internacional, aba_corretora = st.tabs([
+    "📊 Day Trade", "📈 Swing Trade", "🏢 FIIs", "🛢️ Commodities", "🌍 Internacional", "🤖 Corretora"
 ])
 
 # --- ABA DAY TRADE ---
 with aba_daytrade:
     st.header(f"🐊 Análise de Fluxo: {ativo_grafico.replace('.SA', '')} (1m)")
-    
     try:
         df = yf.download(ativo_grafico, period="1d", interval="1m", progress=False)
         if not df.empty:
@@ -179,7 +166,6 @@ with aba_daytrade:
                 df['mandibula'] = df['Close'].ewm(span=13, adjust=False).mean().shift(8)
                 df['dentes'] = df['Close'].ewm(span=8, adjust=False).mean().shift(5)
                 df['labios'] = df['Close'].ewm(span=5, adjust=False).mean().shift(3)
-                
                 df['range'] = df['High'] - df['Low']
                 df['range'] = df['range'].replace(0, 0.01) 
                 df['bop'] = (df['Close'] - df['Open']) / df['range']
@@ -198,18 +184,15 @@ with aba_daytrade:
                 df['MACD'] = exp1 - exp2
                 df['MACD_Sinal'] = df['MACD'].ewm(span=9, adjust=False).mean()
                 df['MACD_Hist'] = df['MACD'] - df['MACD_Sinal']
-                
                 df['MA_Curta'] = df['Close'].rolling(window=9).mean()
                 df['MA_Longa'] = df['Close'].rolling(window=21).mean()
                 
                 ultimo = df.iloc[-1]
-                
                 cond_giba_compra = ultimo['MA_Curta'] > ultimo['MA_Longa']
                 cond_jacare_compra = ultimo['labios'] > ultimo['dentes'] > ultimo['mandibula']
                 cond_forca_compra = ultimo['forca_compra'] > 60
                 cond_rsi_compra = ultimo['RSI'] < 70
                 cond_macd_compra = ultimo['MACD'] > ultimo['MACD_Sinal']
-                
                 cond_giba_venda = ultimo['MA_Curta'] < ultimo['MA_Longa']
                 cond_jacare_venda = ultimo['labios'] < ultimo['dentes'] < ultimo['mandibula']
                 cond_forca_venda = ultimo['forca_compra'] < 40
@@ -237,23 +220,18 @@ with aba_daytrade:
                 fig.add_trace(go.Scatter(x=df['date'], y=df['mandibula'], line=dict(color='#4da6ff', width=1.5), name='Mandíbula'), row=1, col=1)
                 fig.add_trace(go.Scatter(x=df['date'], y=df['dentes'], line=dict(color='#ff4d4d', width=1.5), name='Dentes'), row=1, col=1)
                 fig.add_trace(go.Scatter(x=df['date'], y=df['labios'], line=dict(color='#00ff88', width=1.5), name='Lábios'), row=1, col=1)
-                
                 ultimo_preco = df['Close'].iloc[-1]
                 linha_stop = ultimo_preco * (1 - stop_loss_pct)
                 fig.add_hline(y=linha_stop, line_dash="dash", line_color="#ffcc00", annotation_text=f"Stop: R$ {linha_stop:.2f}", annotation_position="top right", row=1, col=1)
-                
                 fig.add_trace(go.Bar(x=df['date'], y=df['forca_compra'], name='Força', marker_color=cores_forca, showlegend=False), row=2, col=1)
                 fig.add_hline(y=50, line_dash="dot", line_color="gray", row=2, col=1)
-                
                 fig.add_trace(go.Scatter(x=df['date'], y=df['RSI'], line=dict(color='#ffcc00', width=1.5), name='RSI'), row=3, col=1)
                 fig.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1)
                 fig.add_hline(y=30, line_dash="dash", line_color="green", row=3, col=1)
-                
                 fig.add_trace(go.Scatter(x=df['date'], y=df['MACD'], line=dict(color='#4da6ff', width=1.5), name='MACD'), row=4, col=1)
                 fig.add_trace(go.Scatter(x=df['date'], y=df['MACD_Sinal'], line=dict(color='#ff4d4d', width=1.5), name='Sinal'), row=4, col=1)
                 cores_hist = ['#00ff88' if val >= 0 else '#ff4d4d' for val in df['MACD_Hist']]
                 fig.add_trace(go.Bar(x=df['date'], y=df['MACD_Hist'], name='Histograma', marker_color=cores_hist, opacity=0.6, showlegend=False), row=4, col=1)
-                
                 fig.update_layout(template='plotly_dark', xaxis_rangeslider_visible=False, height=800, margin=dict(l=20, r=20, t=20, b=20))
                 fig.update_xaxes(showticklabels=False, row=1, col=1)
                 fig.update_xaxes(showticklabels=False, row=2, col=1)
@@ -265,7 +243,6 @@ with aba_daytrade:
 # --- ABA SWING TRADE ---
 with aba_swing:
     st.header(f"📈 Estratégia Swing Trade: {ativo_grafico.replace('.SA', '')}")
-    
     try:
         df = yf.download(ativo_grafico, period="1y", interval="1d", progress=False)
         if not df.empty:
@@ -273,24 +250,19 @@ with aba_swing:
                 df.columns = df.columns.get_level_values(0)
             df = df.reset_index()
             df['date'] = pd.to_datetime(df['Date'])
-            
             df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
             df['EMA_200'] = df['Close'].ewm(span=200, adjust=False).mean()
-            
             delta = df['Close'].diff()
             gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
             rs = gain / loss
             df['RSI'] = 100 - (100 / (1 + rs))
-            
             ultimo = df.iloc[-1]
-            
             cond_tendencia_alta = ultimo['Close'] > ultimo['EMA_200']
             cond_ema_alinhada = ultimo['EMA_50'] > ultimo['EMA_200']
             cond_rsi_compra = 40 < ultimo['RSI'] < 70
             cond_rsi_venda = ultimo['RSI'] > 70
             cond_perdeu_ema50 = ultimo['Close'] < ultimo['EMA_50']
-            
             if cond_tendencia_alta and cond_ema_alinhada and cond_rsi_compra:
                 st.success("### 🟢 SINAL DE COMPRA (SWING)! Tendência de alta.")
                 st.write(f"**Alvo:** R$ {ultimo['Close'] * 1.10:.2f} (+10%)")
@@ -300,7 +272,6 @@ with aba_swing:
                 st.error("### 🔴 SINAL DE VENDA (SWING)! Tendência virou para baixa.")
             else:
                 st.warning("### ⏳ AGUARDAR (SWING).")
-            
             fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.7, 0.3])
             fig.add_trace(go.Candlestick(x=df['date'], open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Preço', increasing_line_color='#00ff88', decreasing_line_color='#ff4d4d'), row=1, col=1)
             fig.add_trace(go.Scatter(x=df['date'], y=df['EMA_50'], line=dict(color='#ffcc00', width=1.5), name='EMA 50'), row=1, col=1)
@@ -336,3 +307,72 @@ with aba_internacional:
     colunas = st.columns(len(internacional))
     for i, ativo in enumerate(internacional):
         mostrar_card_ativo(ativo, colunas[i])
+
+# --- NOVA ABA: CORRETORA (COMPRA E VENDA MANUAL) ---
+with aba_corretora:
+    st.header("🤖 Corretora (Paper Trading)")
+    st.write("Aqui você pode enviar ordens de compra e venda **reais** para a sua conta de simulação da Alpaca.")
+
+    if not alpaca_configurada or not trade_client:
+        st.warning("⚠️ A Alpaca não está configurada. Vá em 'Settings > Secrets' no Streamlit Cloud e adicione suas chaves.")
+    else:
+        # Mostra o saldo
+        try:
+            account = trade_client.get_account()
+            st.metric("Saldo Disponível (Paper)", f"$ {float(account.cash):,.2f}")
+        except:
+            st.error("Não foi possível obter o saldo da Alpaca.")
+
+        st.divider()
+
+        # Formulário de Ordem
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            # Lista de ativos que a Alpaca aceita (EUA)
+            # Nota: A Alpaca não negocia ações brasileiras. Use tickers dos EUA (ex: AAPL, SPY, TSLA)
+            ativo_ordem = st.selectbox("Ativo (EUA):", ["SPY", "AAPL", "TSLA", "MSFT", "NVDA", "AMZN"])
+        with col2:
+            quantidade = st.number_input("Quantidade:", min_value=1, value=1, step=1)
+        with col3:
+            st.write("") # Espaçador
+            st.write("") # Espaçador
+            # Botões lado a lado
+            col_buy, col_sell = st.columns(2)
+            with col_buy:
+                if st.button("🟢 COMPRAR", use_container_width=True):
+                    try:
+                        ordem = MarketOrderRequest(
+                            symbol=ativo_ordem,
+                            qty=quantidade,
+                            side=OrderSide.BUY,
+                            time_in_force=TimeInForce.DAY
+                        )
+                        trade_client.submit_order(ordem)
+                        st.success(f"✅ Ordem de COMPRA enviada: {quantidade} x {ativo_ordem}")
+                    except Exception as e:
+                        st.error(f"Erro ao comprar: {e}")
+            with col_sell:
+                if st.button("🔴 VENDER", use_container_width=True):
+                    try:
+                        ordem = MarketOrderRequest(
+                            symbol=ativo_ordem,
+                            qty=quantidade,
+                            side=OrderSide.SELL,
+                            time_in_force=TimeInForce.DAY
+                        )
+                        trade_client.submit_order(ordem)
+                        st.success(f"✅ Ordem de VENDA enviada: {quantidade} x {ativo_ordem}")
+                    except Exception as e:
+                        st.error(f"Erro ao vender: {e}")
+
+        st.divider()
+        st.subheader("📋 Suas Posições Abertas")
+        try:
+            posicoes = trade_client.get_all_positions()
+            if posicoes:
+                for pos in posicoes:
+                    st.write(f"**{pos.symbol}**: {pos.qty} unidades @ R$ {float(pos.avg_entry_price):.2f} (Lucro: R$ {float(pos.unrealized_pl):.2f})")
+            else:
+                st.info("Você não tem posições abertas.")
+        except Exception as e:
+            st.error(f"Erro ao buscar posições: {e}")
