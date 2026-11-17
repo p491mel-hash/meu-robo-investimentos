@@ -8,12 +8,11 @@ import yfinance as yf
 import time
 import numpy as np
 from backtesting import Backtest, Strategy
-from backtesting.lib import crossover
 
 # Tenta importar a Alpaca
 try:
     from alpaca.trading.client import TradingClient
-    from alpaca.trading.requests import MarketOrderRequest, GetOrdersRequest, StopLossRequest, TrailingStopOrderRequest
+    from alpaca.trading.requests import MarketOrderRequest, GetOrdersRequest, StopLossRequest
     from alpaca.trading.enums import OrderSide, TimeInForce, OrderStatus
     ALPACA_DISPONIVEL = True
 except ImportError:
@@ -145,12 +144,12 @@ def mostrar_card_ativo(ativo, coluna, timeframe="1d"):
         else:
             st.error("Erro ao buscar")
 
-# --- CRIAÇÃO DAS ABAS (COM BACKTESTING) ---
+# --- CRIAÇÃO DAS ABAS ---
 aba_daytrade, aba_swing, aba_fiis, aba_commodities, aba_internacional, aba_corretora, aba_backtest = st.tabs([
     "📊 Day Trade", "📈 Swing Trade", "🏢 FIIs", "🛢️ Commodities", "🌍 Internacional", "🤖 Corretora", "🧪 Backtesting"
 ])
 
-# --- ABA DAY TRADE (COM AUTOMAÇÃO) ---
+# --- ABA DAY TRADE ---
 with aba_daytrade:
     st.header(f"🐊 Análise de Fluxo: {ativo_grafico.replace('.SA', '')} (1m)")
     
@@ -217,7 +216,6 @@ with aba_daytrade:
                 else:
                     st.warning("### ⏳ AGUARDAR. Indicadores não alinhados (Day Trade).")
                 
-                # Automação do Day Trade
                 if auto_day and sinal in ["COMPRA", "VENDA"]:
                     ticker_alpaca = "SPY"
                     try:
@@ -267,7 +265,7 @@ with aba_daytrade:
     except Exception as e:
         st.error(f"Erro no Day Trade: {e}")
 
-# --- ABA SWING TRADE (COM TRAILING STOP E AUTOMAÇÃO) ---
+# --- ABA SWING TRADE ---
 with aba_swing:
     st.header(f"📈 Estratégia Swing Trade: {ativo_grafico.replace('.SA', '')}")
     
@@ -314,13 +312,11 @@ with aba_swing:
             else:
                 st.warning("### ⏳ AGUARDAR (SWING).")
             
-            # Automação com Trailing Stop
             if auto_swing and sinal_swing in ["COMPRA", "VENDA"]:
                 ticker_alpaca = "SPY"
                 try:
                     if sinal_swing == "COMPRA":
                         if use_trailing:
-                            # Ordem com Trailing Stop
                             ordem = MarketOrderRequest(
                                 symbol=ticker_alpaca, qty=1, side=OrderSide.BUY, time_in_force=TimeInForce.DAY,
                                 order_class="oto",
@@ -469,7 +465,6 @@ with aba_backtest:
     st.header("🧪 Backtesting da Estratégia de Swing Trade")
     st.write("Teste a estratégia com dados históricos para ver como ela teria se saído no passado.")
     
-    # Parâmetros do backtest
     col1, col2 = st.columns(2)
     with col1:
         ativo_backtest = st.selectbox("Ativo para Backtest:", lista_ativos)
@@ -479,7 +474,6 @@ with aba_backtest:
     if st.button("🚀 Rodar Backtest", use_container_width=True):
         with st.spinner("Baixando dados e rodando o backtest..."):
             try:
-                # Baixa os dados
                 df = yf.download(ativo_backtest, period=periodo_backtest, interval="1d", progress=False)
                 if df.empty:
                     st.error("Não foi possível baixar os dados.")
@@ -487,12 +481,10 @@ with aba_backtest:
                     if isinstance(df.columns, pd.MultiIndex):
                         df.columns = df.columns.get_level_values(0)
                     
-                    # Prepara os dados para o backtesting.py
                     df_bt = df[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
                     df_bt.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
                     df_bt.index = pd.to_datetime(df_bt.index)
                     
-                    # Define a estratégia
                     class SwingStrategy(Strategy):
                         def init(self):
                             self.ema50 = self.I(lambda x: pd.Series(x).ewm(span=50, adjust=False).mean(), self.data.Close)
@@ -509,25 +501,37 @@ with aba_backtest:
                         def next(self):
                             if len(self.data) < 200:
                                 return
-                            # Condições de compra
                             if (self.data.Close[-1] > self.ema200[-1] and 
                                 self.ema50[-1] > self.ema200[-1] and 
                                 40 < self.rsi[-1] < 70 and 
                                 not self.position):
                                 self.buy()
-                            # Condições de venda
                             elif self.position:
                                 if self.rsi[-1] > 70 or self.data.Close[-1] < self.ema50[-1]:
                                     self.position.close()
                     
-                    # Roda o backtest
                     bt = Backtest(df_bt, SwingStrategy, cash=10000, commission=.002, exclusive_orders=True)
                     stats = bt.run()
                     
-                    # Mostra os resultados
                     st.subheader("📊 Resultados do Backtest")
                     col_res1, col_res2, col_res3, col_res4 = st.columns(4)
                     with col_res1:
                         st.metric("Retorno Total", f"{stats['Return [%]']:.2f}%")
                     with col_res2:
-                        st.metric("Taxa de Acerto
+                        st.metric("Taxa de Acerto", f"{stats['Win Rate [%]']:.2f}%")
+                    with col_res3:
+                        st.metric("Nº de Trades", f"{stats['# Trades']}")
+                    with col_res4:
+                        st.metric("Drawdown Máx.", f"{stats['Max. Drawdown [%]']:.2f}%")
+                    
+                    st.divider()
+                    st.subheader("📈 Gráfico da Curva de Capital")
+                    # Plota a curva de capital
+                    equity = stats['_equity_curve']
+                    fig_bt = go.Figure()
+                    fig_bt.add_trace(go.Scatter(x=equity.index, y=equity['Equity'], name='Capital', line=dict(color='#00ff88', width=2)))
+                    fig_bt.update_layout(template='plotly_dark', height=400, margin=dict(l=20, r=20, t=20, b=20))
+                    st.plotly_chart(fig_bt, use_container_width=True)
+                    
+            except Exception as e:
+                st.error(f"Erro no backtest: {e}")
