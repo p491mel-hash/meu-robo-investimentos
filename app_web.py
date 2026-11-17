@@ -11,8 +11,8 @@ import numpy as np
 # Tenta importar a Alpaca
 try:
     from alpaca.trading.client import TradingClient
-    from alpaca.trading.requests import MarketOrderRequest
-    from alpaca.trading.enums import OrderSide, TimeInForce
+    from alpaca.trading.requests import MarketOrderRequest, GetOrdersRequest, StopLossRequest
+    from alpaca.trading.enums import OrderSide, TimeInForce, OrderStatus
     ALPACA_DISPONIVEL = True
 except ImportError:
     ALPACA_DISPONIVEL = False
@@ -29,7 +29,6 @@ if time.time() - st.session_state.last_update > 30:
 # --- BARRA LATERAL (ESQUERDA) ---
 st.sidebar.title("🌎 Super Robô")
 
-# --- LISTA EXPANDIDA DE ATIVOS PRINCIPAIS ---
 lista_ativos = [
     "USDB11.SA", "BOVA11.SA",
     "PETR4.SA", "VALE3.SA", "ITUB4.SA", "BBDC4.SA", "ABEV3.SA", "WEGE3.SA", "BBAS3.SA", "MGLU3.SA", "B3SA3.SA",
@@ -48,7 +47,6 @@ st.sidebar.divider()
 st.sidebar.subheader("📈 Cotações Rápidas")
 acoes_lista = ['PETR4', 'VALE3', 'ITUB4', 'BBDC4', 'ABEV3', 'WEGE3']
 
-# --- FUNÇÃO DE BUSCA (YAHOO FINANCE) ---
 def buscar_dados_yahoo(ativo):
     if not ativo.endswith(".SA") and not ativo.endswith("=X") and not ativo.endswith("=F"):
         ticker = f"{ativo}.SA"
@@ -144,7 +142,7 @@ def mostrar_card_ativo(ativo, coluna, timeframe="1d"):
         else:
             st.error("Erro ao buscar")
 
-# --- CRIAÇÃO DAS ABAS (COM A NOVA ABA CORRETORA) ---
+# --- CRIAÇÃO DAS ABAS ---
 aba_daytrade, aba_swing, aba_fiis, aba_commodities, aba_internacional, aba_corretora = st.tabs([
     "📊 Day Trade", "📈 Swing Trade", "🏢 FIIs", "🛢️ Commodities", "🌍 Internacional", "🤖 Corretora"
 ])
@@ -240,9 +238,17 @@ with aba_daytrade:
     except Exception as e:
         st.error(f"Erro no Day Trade: {e}")
 
-# --- ABA SWING TRADE ---
+# --- ABA SWING TRADE (COM AUTOMAÇÃO) ---
 with aba_swing:
     st.header(f"📈 Estratégia Swing Trade: {ativo_grafico.replace('.SA', '')}")
+    
+    # Checkbox para automação
+    if alpaca_configurada and trade_client:
+        auto_swing = st.checkbox("🤖 Enviar ordem automaticamente para a Alpaca quando o sinal for confirmado", value=False)
+    else:
+        auto_swing = False
+        st.info("Configure a Alpaca para ativar a automação.")
+    
     try:
         df = yf.download(ativo_grafico, period="1y", interval="1d", progress=False)
         if not df.empty:
@@ -263,15 +269,52 @@ with aba_swing:
             cond_rsi_compra = 40 < ultimo['RSI'] < 70
             cond_rsi_venda = ultimo['RSI'] > 70
             cond_perdeu_ema50 = ultimo['Close'] < ultimo['EMA_50']
+            
+            sinal_swing = "AGUARDAR"
             if cond_tendencia_alta and cond_ema_alinhada and cond_rsi_compra:
+                sinal_swing = "COMPRA"
                 st.success("### 🟢 SINAL DE COMPRA (SWING)! Tendência de alta.")
                 st.write(f"**Alvo:** R$ {ultimo['Close'] * 1.10:.2f} (+10%)")
             elif cond_rsi_venda:
+                sinal_swing = "VENDA"
                 st.error("### 🔴 SINAL DE VENDA (SWING)! Sobrecomprado (RSI > 70). Realize o lucro.")
             elif cond_perdeu_ema50 and ultimo['Close'] < ultimo['EMA_200']:
+                sinal_swing = "VENDA"
                 st.error("### 🔴 SINAL DE VENDA (SWING)! Tendência virou para baixa.")
             else:
                 st.warning("### ⏳ AGUARDAR (SWING).")
+            
+            # Automação: envia ordem se o sinal for COMPRA ou VENDA e o checkbox estiver marcado
+            if auto_swing and sinal_swing in ["COMPRA", "VENDA"]:
+                ticker_alpaca = "SPY"  # Ativo de exemplo para a Alpaca (EUA)
+                try:
+                    if sinal_swing == "COMPRA":
+                        # Bracket Order: Compra + Stop Loss automático
+                        preco_entrada = ultimo['Close']
+                        preco_stop = preco_entrada * (1 - stop_loss_pct)
+                        
+                        ordem = MarketOrderRequest(
+                            symbol=ticker_alpaca,
+                            qty=1,
+                            side=OrderSide.BUY,
+                            time_in_force=TimeInForce.DAY,
+                            order_class="bracket",
+                            stop_loss=StopLossRequest(stop_price=round(preco_stop, 2))
+                        )
+                        trade_client.submit_order(ordem)
+                        st.info(f"🤖 Ordem de COMPRA (Swing) enviada para {ticker_alpaca} com Stop em ${preco_stop:.2f}")
+                    else:
+                        ordem = MarketOrderRequest(
+                            symbol=ticker_alpaca,
+                            qty=1,
+                            side=OrderSide.SELL,
+                            time_in_force=TimeInForce.DAY
+                        )
+                        trade_client.submit_order(ordem)
+                        st.info(f"🤖 Ordem de VENDA (Swing) enviada para {ticker_alpaca}")
+                except Exception as e:
+                    st.error(f"Erro ao enviar ordem automática: {e}")
+            
             fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.7, 0.3])
             fig.add_trace(go.Candlestick(x=df['date'], open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Preço', increasing_line_color='#00ff88', decreasing_line_color='#ff4d4d'), row=1, col=1)
             fig.add_trace(go.Scatter(x=df['date'], y=df['EMA_50'], line=dict(color='#ffcc00', width=1.5), name='EMA 50'), row=1, col=1)
@@ -308,15 +351,14 @@ with aba_internacional:
     for i, ativo in enumerate(internacional):
         mostrar_card_ativo(ativo, colunas[i])
 
-# --- NOVA ABA: CORRETORA (COMPRA E VENDA MANUAL) ---
+# --- NOVA ABA: CORRETORA (COM HISTÓRICO E STOP LOSS) ---
 with aba_corretora:
     st.header("🤖 Corretora (Paper Trading)")
-    st.write("Aqui você pode enviar ordens de compra e venda **reais** para a sua conta de simulação da Alpaca.")
+    st.write("Aqui você pode enviar ordens de compra e venda para a sua conta de simulação da Alpaca.")
 
     if not alpaca_configurada or not trade_client:
         st.warning("⚠️ A Alpaca não está configurada. Vá em 'Settings > Secrets' no Streamlit Cloud e adicione suas chaves.")
     else:
-        # Mostra o saldo
         try:
             account = trade_client.get_account()
             st.metric("Saldo Disponível (Paper)", f"$ {float(account.cash):,.2f}")
@@ -324,31 +366,35 @@ with aba_corretora:
             st.error("Não foi possível obter o saldo da Alpaca.")
 
         st.divider()
-
-        # Formulário de Ordem
+        st.subheader("📝 Enviar Ordem Manual")
+        
         col1, col2, col3 = st.columns(3)
         with col1:
-            # Lista de ativos que a Alpaca aceita (EUA)
-            # Nota: A Alpaca não negocia ações brasileiras. Use tickers dos EUA (ex: AAPL, SPY, TSLA)
-            ativo_ordem = st.selectbox("Ativo (EUA):", ["SPY", "AAPL", "TSLA", "MSFT", "NVDA", "AMZN"])
+            # Lista expandida de ativos americanos
+            ativo_ordem = st.selectbox("Ativo (EUA):", ["SPY", "AAPL", "TSLA", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "NFLX", "AMD", "INTC", "JPM", "V", "DIS"])
         with col2:
             quantidade = st.number_input("Quantidade:", min_value=1, value=1, step=1)
         with col3:
-            st.write("") # Espaçador
-            st.write("") # Espaçador
-            # Botões lado a lado
+            st.write("")
+            st.write("")
             col_buy, col_sell = st.columns(2)
             with col_buy:
                 if st.button("🟢 COMPRAR", use_container_width=True):
                     try:
+                        # Bracket Order com Stop Loss
+                        preco_atual = yf.Ticker(ativo_ordem).fast_info['lastPrice']
+                        preco_stop = preco_atual * (1 - stop_loss_pct)
+                        
                         ordem = MarketOrderRequest(
                             symbol=ativo_ordem,
                             qty=quantidade,
                             side=OrderSide.BUY,
-                            time_in_force=TimeInForce.DAY
+                            time_in_force=TimeInForce.DAY,
+                            order_class="bracket",
+                            stop_loss=StopLossRequest(stop_price=round(preco_stop, 2))
                         )
                         trade_client.submit_order(ordem)
-                        st.success(f"✅ Ordem de COMPRA enviada: {quantidade} x {ativo_ordem}")
+                        st.success(f"✅ Ordem de COMPRA enviada: {quantidade} x {ativo_ordem} (Stop: ${preco_stop:.2f})")
                     except Exception as e:
                         st.error(f"Erro ao comprar: {e}")
             with col_sell:
@@ -376,3 +422,28 @@ with aba_corretora:
                 st.info("Você não tem posições abertas.")
         except Exception as e:
             st.error(f"Erro ao buscar posições: {e}")
+
+        st.divider()
+        st.subheader("📜 Histórico de Ordens")
+        try:
+            # Busca as últimas 20 ordens
+            request = GetOrdersRequest(status=OrderStatus.ALL, limit=20)
+            ordens = trade_client.get_orders(filter=request)
+            
+            if ordens:
+                dados_ordens = []
+                for o in ordens:
+                    dados_ordens.append({
+                        "Data": str(o.submitted_at).split(".")[0] if o.submitted_at else "",
+                        "Ativo": o.symbol,
+                        "Lado": str(o.side.value).upper() if o.side else "",
+                        "Qtd": float(o.qty) if o.qty else 0,
+                        "Preço": float(o.filled_avg_price) if o.filled_avg_price else 0,
+                        "Status": str(o.status.value).upper() if o.status else ""
+                    })
+                df_ordens = pd.DataFrame(dados_ordens)
+                st.dataframe(df_ordens, use_container_width=True)
+            else:
+                st.info("Nenhuma ordem encontrada.")
+        except Exception as e:
+            st.error(f"Erro ao buscar histórico: {e}")
