@@ -366,69 +366,78 @@ with aba_internacional:
     for i, ativo in enumerate(internacional):
         mostrar_card_ativo(ativo, colunas[i])
 
-# --- ABA CRIPTO ---
+# --- ABA CRIPTO (NOVA) ---
 with aba_cripto:
-    st.header("🪙 Criptomoedas via DexScreener")
-    st.write("Monitoramento de preços de tokens na rede Polygon (QuickSwap).")
+    st.header("🪙 Criptomoedas (CoinGecko)")
+    st.write("Monitoramento de preços das principais criptomoedas via API pública da CoinGecko.")
     
-    def buscar_dexscreener_pair(chain, pair_address):
+    def buscar_cripto_coingecko(coin_id):
         try:
-            # Endpoint específico para buscar um par exato
-            url = f"https://api.dexscreener.com/latest/dex/pairs/{chain}/{pair_address}"
+            url = f"https://api.coingecko.com/api/v3/simple/price?ids={coin_id}&vs_currencies=usd&include_24hr_change=true"
             response = requests.get(url, timeout=10)
             data = response.json()
-            
+            if coin_id in data:
+                preco = data[coin_id].get('usd', 0)
+                variacao = data[coin_id].get('usd_24h_change', 0)
+                return preco, variacao
+        except:
+            pass
+        return None, None
+    
+    criptos = {
+        "Bitcoin": "bitcoin",
+        "Ethereum": "ethereum",
+        "Solana": "solana",
+        "XRP": "ripple",
+        "Cardano": "cardano",
+        "Dogecoin": "dogecoin",
+        "Chainlink": "chainlink",
+        "Polygon": "matic-network",
+        "Avalanche": "avalanche-2",
+        "Polkadot": "polkadot"
+    }
+    
+    # Mostra as criptos em colunas (3 por linha)
+    colunas_cripto = st.columns(3)
+    for i, (nome, coin_id) in enumerate(criptos.items()):
+        preco, var = buscar_cripto_coingecko(coin_id)
+        with colunas_cripto[i % 3]:
+            st.subheader(nome)
+            if preco is not None:
+                st.metric(label="Preço", value=f"${preco:,.2f}", delta=f"{var:+.2f}%" if var else None)
+            else:
+                st.error("Erro ao buscar")
+    
+    st.divider()
+    st.subheader("🔍 MMI Infinity (Monitoramento Separado)")
+    st.write("A MMI não está listada na CoinGecko. O pool na QuickSwap tem liquidez extremamente baixa.")
+    
+    # Tenta buscar na DexScreener pelo par
+    def buscar_mmi_dexscreener():
+        try:
+            url = "https://api.dexscreener.com/latest/dex/pairs/polygon/0xba2aebf8f68e347d37a5101dd466f81bccc56084"
+            response = requests.get(url, timeout=10)
+            data = response.json()
             if data.get('pairs') and len(data['pairs']) > 0:
                 pair = data['pairs'][0]
                 preco = float(pair.get('priceUsd', 0))
                 liquidez = pair.get('liquidity', {}).get('usd', 0)
                 volume = pair.get('volume', {}).get('h24', 0)
                 return preco, liquidez, volume
-            else:
-                return None, None, None
-        except Exception as e:
-            return None, None, None
+        except:
+            pass
+        return None, None, None
     
-    # Endereço do PAR MMI/WPOL na QuickSwap
-    endereco_par_mmi = "0xba2aebf8f68e347d37a5101dd466f81bccc56084"
-    preco_mmi, liq_mmi, vol_mmi = buscar_dexscreener_pair("polygon", endereco_par_mmi)
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("MMI Infinity (MMI)")
-        if preco_mmi:
-            st.metric("Preço", f"${preco_mmi:.8f}")
-            st.metric("Liquidez", f"${liq_mmi:,.2f}")
-            st.metric("Volume 24h", f"${vol_mmi:,.2f}")
-            if liq_mmi and liq_mmi < 1000:
-                st.error("⚠️ LIQUIDEZ CRÍTICA! Pool com menos de $1.000. Risco altíssimo de não conseguir vender.")
-            else:
-                st.warning("⚠️ Token com baixa liquidez. Opere com extrema cautela.")
-        else:
-            st.error("Não foi possível buscar o preço da MMI. Verifique se o endereço do contrato está correto.")
-    
-    with col2:
-        st.subheader("Outras Criptos (Exemplo)")
-        endereco_usdc = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
-        # Para o USDC, usamos o endpoint de token mesmo, pois ele tem muitos pares
-        def buscar_dexscreener_token(token_address):
-            try:
-                url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
-                response = requests.get(url, timeout=10)
-                data = response.json()
-                if data.get('pairs'):
-                    pair = data['pairs'][0]
-                    preco = float(pair.get('priceUsd', 0))
-                    liquidez = pair.get('liquidity', {}).get('usd', 0)
-                    return preco, liquidez
-            except:
-                pass
-            return None, None
-        
-        preco_usdc, liq_usdc = buscar_dexscreener_token(endereco_usdc)
-        if preco_usdc:
-            st.metric("USDC", f"${preco_usdc:.4f}")
-            st.metric("Liquidez", f"${liq_usdc:,.2f}")
+    preco_mmi, liq_mmi, vol_mmi = buscar_mmi_dexscreener()
+    if preco_mmi:
+        col_mmi1, col_mmi2, col_mmi3 = st.columns(3)
+        col_mmi1.metric("Preço MMI", f"${preco_mmi:.8f}")
+        col_mmi2.metric("Liquidez", f"${liq_mmi:,.2f}")
+        col_mmi3.metric("Volume 24h", f"${vol_mmi:,.2f}")
+        if liq_mmi and liq_mmi < 1000:
+            st.error("⚠️ LIQUIDEZ CRÍTICA! Pool com menos de $1.000. Risco altíssimo de não conseguir vender.")
+    else:
+        st.warning("Não foi possível buscar o preço da MMI na DexScreener no momento. O pool pode estar sem indexação.")
     
     st.info("💡 Dica: A MMI Infinity tem liquidez de apenas ~$80. Não é possível operar esse token com segurança. Use este painel apenas para acompanhar o preço.")
 
