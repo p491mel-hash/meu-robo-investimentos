@@ -366,7 +366,7 @@ with aba_internacional:
     for i, ativo in enumerate(internacional):
         mostrar_card_ativo(ativo, colunas[i])
 
-# --- ABA CRIPTO (NOVA) ---
+# --- ABA CRIPTO ---
 with aba_cripto:
     st.header("🪙 Criptomoedas via DexScreener")
     st.write("Monitoramento de preços de tokens na rede Polygon (QuickSwap).")
@@ -386,7 +386,7 @@ with aba_cripto:
             return None, None, None
         return None, None, None
     
-    # MMI Infinity (Polygon) - Endereço do contrato (exemplo, pode precisar atualizar)
+    # ENDEREÇO CORRETO DO POOL MMI/WPOL NA QUICKSWAP
     endereco_mmi = "0xba2aebf8f68e347d37a5101dd466f81bccc56084"
     
     preco_mmi, liq_mmi, vol_mmi = buscar_dexscreener(endereco_mmi)
@@ -403,11 +403,10 @@ with aba_cripto:
             else:
                 st.warning("⚠️ Token com baixa liquidez. Opere com extrema cautela.")
         else:
-            st.error("Não foi possível buscar o preço da MMI.")
+            st.error("Não foi possível buscar o preço da MMI. Verifique se o endereço do contrato está correto.")
     
     with col2:
         st.subheader("Outras Criptos (Exemplo)")
-        # Exemplo com uma cripto que tem liquidez (USDC na Polygon)
         endereco_usdc = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
         preco_usdc, liq_usdc, vol_usdc = buscar_dexscreener(endereco_usdc)
         if preco_usdc:
