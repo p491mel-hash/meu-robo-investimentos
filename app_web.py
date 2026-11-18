@@ -12,7 +12,7 @@ from backtesting import Backtest, Strategy
 # Tenta importar a Alpaca
 try:
     from alpaca.trading.client import TradingClient
-    from alpaca.trading.requests import MarketOrderRequest, GetOrdersRequest, StopLossRequest, TrailingStopOrderRequest
+    from alpaca.trading.requests import MarketOrderRequest, GetOrdersRequest, StopLossRequest
     from alpaca.trading.enums import OrderSide, TimeInForce, OrderStatus
     ALPACA_DISPONIVEL = True
 except ImportError:
@@ -41,7 +41,6 @@ lista_ativos = [
 st.sidebar.header("Configurações")
 ativo_grafico = st.sidebar.selectbox("Ativo Principal:", lista_ativos)
 stop_loss_pct = st.sidebar.number_input("Stop Loss (%):", min_value=0.5, max_value=10.0, value=2.0, step=0.5) / 100
-trailing_stop_pct = st.sidebar.number_input("Trailing Stop (%):", min_value=0.5, max_value=10.0, value=3.0, step=0.5) / 100
 
 st.sidebar.divider()
 
@@ -109,7 +108,6 @@ def mostrar_card_ativo(ativo, coluna, timeframe="1d"):
         st.subheader(ativo.replace(".SA", ""))
         if preco is not None:
             st.metric(label="Preço", value=f"R$ {preco:.2f}", delta=f"{var:+.2f}%")
-            
             if var > 0:
                 f_compra = min(100, 50 + (var * 10))
             else:
@@ -135,53 +133,19 @@ def mostrar_card_ativo(ativo, coluna, timeframe="1d"):
             </div>
             """, unsafe_allow_html=True)
             
-            sinal = "AGUARDAR"
             if f_compra > 65 and var > 0.5:
-                sinal = "COMPRA"
                 st.success(">>> COMPRA! <<<")
                 st.warning(f"🛑 Stop: R$ {preco * (1 - stop_loss_pct):.2f}")
             elif f_venda > 65 and var < -0.5:
-                sinal = "VENDA"
                 st.error(">>> VENDA! <<<")
             else:
                 st.info("Aguardar")
-            
-            if alpaca_configurada and trade_client:
-                auto_ativo = st.checkbox(f"🤖 Automatizar {ativo.replace('.SA', '')}", value=False)
-                use_trailing = st.checkbox(f"📈 Trailing Stop ({ativo.replace('.SA', '')})", value=False)
-                
-                if auto_ativo and sinal in ["COMPRA", "VENDA"]:
-                    ticker_alpaca = "SPY" 
-                    try:
-                        if sinal == "COMPRA":
-                            if use_trailing:
-                                ordem = MarketOrderRequest(
-                                    symbol=ticker_alpaca, qty=1, side=OrderSide.BUY, time_in_force=TimeInForce.DAY,
-                                    order_class="oto",
-                                    stop_loss=StopLossRequest(stop_price=round(preco * (1 - stop_loss_pct), 2))
-                                )
-                                trade_client.submit_order(ordem)
-                                st.info(f"🤖 Ordem de COMPRA (Trailing) enviada para {ticker_alpaca}")
-                            else:
-                                ordem = MarketOrderRequest(
-                                    symbol=ticker_alpaca, qty=1, side=OrderSide.BUY, time_in_force=TimeInForce.DAY
-                                )
-                                trade_client.submit_order(ordem)
-                                st.info(f"🤖 Ordem de COMPRA enviada para {ticker_alpaca}")
-                        else:
-                            ordem = MarketOrderRequest(
-                                symbol=ticker_alpaca, qty=1, side=OrderSide.SELL, time_in_force=TimeInForce.DAY
-                            )
-                            trade_client.submit_order(ordem)
-                            st.info(f"🤖 Ordem de VENDA enviada para {ticker_alpaca}")
-                    except Exception as e:
-                        st.error(f"Erro ao enviar ordem: {e}")
         else:
             st.error("Erro ao buscar")
 
 # --- CRIAÇÃO DAS ABAS ---
-aba_daytrade, aba_swing, aba_fiis, aba_commodities, aba_internacional, aba_corretora, aba_backtest = st.tabs([
-    "📊 Day Trade", "📈 Swing Trade", "🏢 FIIs", "🛢️ Commodities", "🌍 Internacional", "🤖 Corretora", "🧪 Backtesting"
+aba_daytrade, aba_swing, aba_fiis, aba_commodities, aba_internacional, aba_cripto, aba_corretora, aba_backtest = st.tabs([
+    "📊 Day Trade", "📈 Swing Trade", "🏢 FIIs", "🛢️ Commodities", "🌍 Internacional", "🪙 Cripto", "🤖 Corretora", "🧪 Backtesting"
 ])
 
 # --- ABA DAY TRADE ---
@@ -255,15 +219,11 @@ with aba_daytrade:
                     ticker_alpaca = "SPY"
                     try:
                         if sinal == "COMPRA":
-                            ordem = MarketOrderRequest(
-                                symbol=ticker_alpaca, qty=1, side=OrderSide.BUY, time_in_force=TimeInForce.DAY
-                            )
+                            ordem = MarketOrderRequest(symbol=ticker_alpaca, qty=1, side=OrderSide.BUY, time_in_force=TimeInForce.DAY)
                             trade_client.submit_order(ordem)
                             st.info(f"🤖 Ordem de COMPRA (Day Trade) enviada para {ticker_alpaca}")
                         else:
-                            ordem = MarketOrderRequest(
-                                symbol=ticker_alpaca, qty=1, side=OrderSide.SELL, time_in_force=TimeInForce.DAY
-                            )
+                            ordem = MarketOrderRequest(symbol=ticker_alpaca, qty=1, side=OrderSide.SELL, time_in_force=TimeInForce.DAY)
                             trade_client.submit_order(ordem)
                             st.info(f"🤖 Ordem de VENDA (Day Trade) enviada para {ticker_alpaca}")
                     except Exception as e:
@@ -360,15 +320,11 @@ with aba_swing:
                             trade_client.submit_order(ordem)
                             st.info(f"🤖 Ordem de COMPRA (Swing) enviada para {ticker_alpaca} com Stop Loss em ${ultimo['Close'] * (1 - stop_loss_pct):.2f}")
                         else:
-                            ordem = MarketOrderRequest(
-                                symbol=ticker_alpaca, qty=1, side=OrderSide.BUY, time_in_force=TimeInForce.DAY
-                            )
+                            ordem = MarketOrderRequest(symbol=ticker_alpaca, qty=1, side=OrderSide.BUY, time_in_force=TimeInForce.DAY)
                             trade_client.submit_order(ordem)
                             st.info(f"🤖 Ordem de COMPRA (Swing) enviada para {ticker_alpaca}")
                     else:
-                        ordem = MarketOrderRequest(
-                            symbol=ticker_alpaca, qty=1, side=OrderSide.SELL, time_in_force=TimeInForce.DAY
-                        )
+                        ordem = MarketOrderRequest(symbol=ticker_alpaca, qty=1, side=OrderSide.SELL, time_in_force=TimeInForce.DAY)
                         trade_client.submit_order(ordem)
                         st.info(f"🤖 Ordem de VENDA (Swing) enviada para {ticker_alpaca}")
                 except Exception as e:
@@ -409,6 +365,56 @@ with aba_internacional:
     colunas = st.columns(len(internacional))
     for i, ativo in enumerate(internacional):
         mostrar_card_ativo(ativo, colunas[i])
+
+# --- ABA CRIPTO (NOVA) ---
+with aba_cripto:
+    st.header("🪙 Criptomoedas via DexScreener")
+    st.write("Monitoramento de preços de tokens na rede Polygon (QuickSwap).")
+    
+    def buscar_dexscreener(token_address):
+        try:
+            url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
+            response = requests.get(url, timeout=10)
+            data = response.json()
+            if data.get('pairs'):
+                pair = data['pairs'][0]
+                preco = float(pair.get('priceUsd', 0))
+                liquidez = pair.get('liquidity', {}).get('usd', 0)
+                volume = pair.get('volume', {}).get('h24', 0)
+                return preco, liquidez, volume
+        except Exception as e:
+            return None, None, None
+        return None, None, None
+    
+    # MMI Infinity (Polygon) - Endereço do contrato (exemplo, pode precisar atualizar)
+    endereco_mmi = "0xba2aebf8f68e347d37a5101dd466f81bccc56084"
+    
+    preco_mmi, liq_mmi, vol_mmi = buscar_dexscreener(endereco_mmi)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("MMI Infinity (MMI)")
+        if preco_mmi:
+            st.metric("Preço", f"${preco_mmi:.8f}")
+            st.metric("Liquidez", f"${liq_mmi:,.2f}")
+            st.metric("Volume 24h", f"${vol_mmi:,.2f}")
+            if liq_mmi and liq_mmi < 1000:
+                st.error("⚠️ LIQUIDEZ CRÍTICA! Pool com menos de $1.000. Risco altíssimo de não conseguir vender.")
+            else:
+                st.warning("⚠️ Token com baixa liquidez. Opere com extrema cautela.")
+        else:
+            st.error("Não foi possível buscar o preço da MMI.")
+    
+    with col2:
+        st.subheader("Outras Criptos (Exemplo)")
+        # Exemplo com uma cripto que tem liquidez (USDC na Polygon)
+        endereco_usdc = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
+        preco_usdc, liq_usdc, vol_usdc = buscar_dexscreener(endereco_usdc)
+        if preco_usdc:
+            st.metric("USDC", f"${preco_usdc:.4f}")
+            st.metric("Liquidez", f"${liq_usdc:,.2f}")
+    
+    st.info("💡 Dica: A MMI Infinity tem liquidez de apenas ~$80. Não é possível operar esse token com segurança. Use este painel apenas para acompanhar o preço.")
 
 # --- ABA CORRETORA ---
 with aba_corretora:
@@ -452,9 +458,7 @@ with aba_corretora:
             with col_sell:
                 if st.button("🔴 VENDER", use_container_width=True):
                     try:
-                        ordem = MarketOrderRequest(
-                            symbol=ativo_ordem, qty=quantidade, side=OrderSide.SELL, time_in_force=TimeInForce.DAY
-                        )
+                        ordem = MarketOrderRequest(symbol=ativo_ordem, qty=quantidade, side=OrderSide.SELL, time_in_force=TimeInForce.DAY)
                         trade_client.submit_order(ordem)
                         st.success(f"✅ Ordem de VENDA enviada: {quantidade} x {ativo_ordem}")
                     except Exception as e:
