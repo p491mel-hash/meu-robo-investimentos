@@ -371,25 +371,27 @@ with aba_cripto:
     st.header("🪙 Criptomoedas via DexScreener")
     st.write("Monitoramento de preços de tokens na rede Polygon (QuickSwap).")
     
-    def buscar_dexscreener(token_address):
+    def buscar_dexscreener_pair(chain, pair_address):
         try:
-            url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
+            # Endpoint específico para buscar um par exato
+            url = f"https://api.dexscreener.com/latest/dex/pairs/{chain}/{pair_address}"
             response = requests.get(url, timeout=10)
             data = response.json()
-            if data.get('pairs'):
+            
+            if data.get('pairs') and len(data['pairs']) > 0:
                 pair = data['pairs'][0]
                 preco = float(pair.get('priceUsd', 0))
                 liquidez = pair.get('liquidity', {}).get('usd', 0)
                 volume = pair.get('volume', {}).get('h24', 0)
                 return preco, liquidez, volume
+            else:
+                return None, None, None
         except Exception as e:
             return None, None, None
-        return None, None, None
     
-    # ENDEREÇO CORRETO DO POOL MMI/WPOL NA QUICKSWAP
-    endereco_mmi = "0xba2aebf8f68e347d37a5101dd466f81bccc56084"
-    
-    preco_mmi, liq_mmi, vol_mmi = buscar_dexscreener(endereco_mmi)
+    # Endereço do PAR MMI/WPOL na QuickSwap
+    endereco_par_mmi = "0xba2aebf8f68e347d37a5101dd466f81bccc56084"
+    preco_mmi, liq_mmi, vol_mmi = buscar_dexscreener_pair("polygon", endereco_par_mmi)
     
     col1, col2 = st.columns(2)
     with col1:
@@ -408,7 +410,22 @@ with aba_cripto:
     with col2:
         st.subheader("Outras Criptos (Exemplo)")
         endereco_usdc = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
-        preco_usdc, liq_usdc, vol_usdc = buscar_dexscreener(endereco_usdc)
+        # Para o USDC, usamos o endpoint de token mesmo, pois ele tem muitos pares
+        def buscar_dexscreener_token(token_address):
+            try:
+                url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
+                response = requests.get(url, timeout=10)
+                data = response.json()
+                if data.get('pairs'):
+                    pair = data['pairs'][0]
+                    preco = float(pair.get('priceUsd', 0))
+                    liquidez = pair.get('liquidity', {}).get('usd', 0)
+                    return preco, liquidez
+            except:
+                pass
+            return None, None
+        
+        preco_usdc, liq_usdc = buscar_dexscreener_token(endereco_usdc)
         if preco_usdc:
             st.metric("USDC", f"${preco_usdc:.4f}")
             st.metric("Liquidez", f"${liq_usdc:,.2f}")
