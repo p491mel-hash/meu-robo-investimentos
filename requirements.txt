@@ -8,4 +8,4 @@ numpy
 web3
 alpaca-py
 backtesting
-google-generativeai
+google-genai
