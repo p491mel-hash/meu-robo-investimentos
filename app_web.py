@@ -18,6 +18,13 @@ try:
 except ImportError:
     ALPACA_DISPONIVEL = False
 
+# Tenta importar o Gemini (para o resumo das IAs)
+try:
+    import google.generativeai as genai
+    GEMINI_DISPONIVEL = True
+except ImportError:
+    GEMINI_DISPONIVEL = False
+
 st.set_page_config(page_title="Super Robô - Global", layout="wide", page_icon="🌎")
 
 # --- AUTO-REFRESH ---
@@ -143,10 +150,75 @@ def mostrar_card_ativo(ativo, coluna, timeframe="1d"):
         else:
             st.error("Erro ao buscar")
 
-# --- CRIAÇÃO DAS ABAS ---
-aba_daytrade, aba_swing, aba_fiis, aba_commodities, aba_internacional, aba_cripto, aba_corretora, aba_backtest = st.tabs([
-    "📊 Day Trade", "📈 Swing Trade", "🏢 FIIs", "🛢️ Commodities", "🌍 Internacional", "🪙 Cripto", "🤖 Corretora", "🧪 Backtesting"
+# --- CRIAÇÃO DAS ABAS (COM A NOVA ABA DE RESUMO) ---
+aba_resumo, aba_daytrade, aba_swing, aba_fiis, aba_commodities, aba_internacional, aba_cripto, aba_corretora, aba_backtest = st.tabs([
+    "🧠 Resumo das IAs", "📊 Day Trade", "📈 Swing Trade", "🏢 FIIs", "🛢️ Commodities", "🌍 Internacional", "🪙 Cripto", "🤖 Corretora", "🧪 Backtesting"
 ])
+
+# --- ABA RESUMO DAS IAS (NOVA) ---
+with aba_resumo:
+    st.header("🧠 Resumo do Dia - Análise das IAs")
+    st.write("Esta aba usa a API do Google Gemini para ler as notícias do mercado e gerar um resumo do que encontrou.")
+    
+    # Verifica se o Gemini está configurado
+    gemini_key = st.secrets.get("GEMINI_API_KEY", None)
+    
+    if not GEMINI_DISPONIVEL:
+        st.error("⚠️ Biblioteca do Gemini não instalada. Adicione `google-generativeai` no requirements.txt.")
+    elif not gemini_key:
+        st.warning("⚠️ Chave da API do Gemini não configurada. Vá em 'Settings > Secrets' e adicione: GEMINI_API_KEY = 'sua_chave'")
+        st.info("Você consegue uma chave gratuita no Google AI Studio (aistudio.google.com).")
+    else:
+        # Configura o Gemini
+        genai.configure(api_key=gemini_key)
+        
+        if st.button("🔄 Gerar Resumo do Dia (IA)", use_container_width=True):
+            with st.spinner("A IA está lendo as notícias e analisando o mercado..."):
+                try:
+                    # Busca notícias de um RSS público (InfoMoney)
+                    url_rss = "https://www.infomoney.com.br/feed/"
+                    response = requests.get(url_rss, timeout=10)
+                    
+                    # Extrai os títulos das notícias (simples, sem parser XML complexo)
+                    import re
+                    titulos = re.findall(r'<title><!\[CDATA\[(.*?)\]\]></title>', response.text)
+                    
+                    # Pega os 10 primeiros títulos
+                    noticias = titulos[:10] if len(titulos) > 10 else titulos
+                    
+                    if not noticias:
+                        st.warning("Não foi possível extrair notícias do RSS.")
+                    else:
+                        # Monta o prompt para o Gemini
+                        prompt = f"""
+                        Você é um analista de mercado financeiro brasileiro.
+                        Analise as seguintes notícias do dia e gere um resumo claro e objetivo em português.
+                        Destaque:
+                        1. O sentimento geral do mercado (positivo, negativo ou neutro).
+                        2. Os setores ou ativos que podem ser afetados.
+                        3. Uma recomendação simples (cautela, oportunidade de compra, etc.).
+                        
+                        Notícias:
+                        {chr(10).join(noticias)}
+                        """
+                        
+                        # Chama o Gemini
+                        model = genai.GenerativeModel('gemini-1.5-flash')
+                        resposta = model.generate_content(prompt)
+                        
+                        # Exibe o resumo
+                        st.success("✅ Resumo gerado pela IA:")
+                        st.markdown(resposta.text)
+                        
+                        # Exibe as notícias usadas como base
+                        with st.expander("Ver notícias usadas na análise"):
+                            for i, noticia in enumerate(noticias, 1):
+                                st.write(f"{i}. {noticia}")
+                                
+                except Exception as e:
+                    st.error(f"Erro ao gerar resumo: {e}")
+        
+        st.info("💡 Dica: O resumo é gerado sob demanda. Clique no botão para a IA analisar as notícias do momento.")
 
 # --- ABA DAY TRADE ---
 with aba_daytrade:
@@ -366,7 +438,7 @@ with aba_internacional:
     for i, ativo in enumerate(internacional):
         mostrar_card_ativo(ativo, colunas[i])
 
-# --- ABA CRIPTO (NOVA) ---
+# --- ABA CRIPTO ---
 with aba_cripto:
     st.header("🪙 Criptomoedas (CoinGecko)")
     st.write("Monitoramento de preços das principais criptomoedas via API pública da CoinGecko.")
@@ -397,7 +469,6 @@ with aba_cripto:
         "Polkadot": "polkadot"
     }
     
-    # Mostra as criptos em colunas (3 por linha)
     colunas_cripto = st.columns(3)
     for i, (nome, coin_id) in enumerate(criptos.items()):
         preco, var = buscar_cripto_coingecko(coin_id)
@@ -412,7 +483,6 @@ with aba_cripto:
     st.subheader("🔍 MMI Infinity (Monitoramento Separado)")
     st.write("A MMI não está listada na CoinGecko. O pool na QuickSwap tem liquidez extremamente baixa.")
     
-    # Tenta buscar na DexScreener pelo par
     def buscar_mmi_dexscreener():
         try:
             url = "https://api.dexscreener.com/latest/dex/pairs/polygon/0xba2aebf8f68e347d37a5101dd466f81bccc56084"
