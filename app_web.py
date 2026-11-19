@@ -539,4 +539,122 @@ with aba_corretora:
                         trade_client.submit_order(ordem)
                         st.success(f"✅ Ordem de COMPRA enviada: {quantidade} x {ativo_ordem} (Stop: ${preco_stop:.2f})")
                     except Exception as e:
-                        st.error(f"Erro ao comprar: {e
+                        st.error(f"Erro ao comprar: {e}")
+            with col_sell:
+                if st.button("🔴 VENDER", use_container_width=True):
+                    try:
+                        ordem = MarketOrderRequest(symbol=ativo_ordem, qty=quantidade, side=OrderSide.SELL, time_in_force=TimeInForce.DAY)
+                        trade_client.submit_order(ordem)
+                        st.success(f"✅ Ordem de VENDA enviada: {quantidade} x {ativo_ordem}")
+                    except Exception as e:
+                        st.error(f"Erro ao vender: {e}")
+
+        st.divider()
+        st.subheader("📋 Suas Posições Abertas")
+        try:
+            posicoes = trade_client.get_all_positions()
+            if posicoes:
+                for pos in posicoes:
+                    st.write(f"**{pos.symbol}**: {pos.qty} unidades @ R$ {float(pos.avg_entry_price):.2f} (Lucro: R$ {float(pos.unrealized_pl):.2f})")
+            else:
+                st.info("Você não tem posições abertas.")
+        except Exception as e:
+            st.error(f"Erro ao buscar posições: {e}")
+
+        st.divider()
+        st.subheader("📜 Histórico de Ordens")
+        try:
+            request = GetOrdersRequest(status=OrderStatus.ALL, limit=20)
+            ordens = trade_client.get_orders(filter=request)
+            if ordens:
+                dados_ordens = []
+                for o in ordens:
+                    dados_ordens.append({
+                        "Data": str(o.submitted_at).split(".")[0] if o.submitted_at else "",
+                        "Ativo": o.symbol,
+                        "Lado": str(o.side.value).upper() if o.side else "",
+                        "Qtd": float(o.qty) if o.qty else 0,
+                        "Preço": float(o.filled_avg_price) if o.filled_avg_price else 0,
+                        "Status": str(o.status.value).upper() if o.status else ""
+                    })
+                df_ordens = pd.DataFrame(dados_ordens)
+                st.dataframe(df_ordens, use_container_width=True)
+            else:
+                st.info("Nenhuma ordem encontrada.")
+        except Exception as e:
+            st.error(f"Erro ao buscar histórico: {e}")
+
+# --- ABA BACKTESTING ---
+with aba_backtest:
+    st.header("🧪 Backtesting da Estratégia de Swing Trade")
+    st.write("Teste a estratégia com dados históricos para ver como ela teria se saído no passado.")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        ativo_backtest = st.selectbox("Ativo para Backtest:", lista_ativos)
+    with col2:
+        periodo_backtest = st.selectbox("Período:", ["1y", "2y", "5y"])
+    
+    if st.button("🚀 Rodar Backtest", use_container_width=True):
+        with st.spinner("Baixando dados e rodando o backtest..."):
+            try:
+                df = yf.download(ativo_backtest, period=periodo_backtest, interval="1d", progress=False)
+                if df.empty:
+                    st.error("Não foi possível baixar os dados.")
+                else:
+                    if isinstance(df.columns, pd.MultiIndex):
+                        df.columns = df.columns.get_level_values(0)
+                    
+                    df_bt = df[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
+                    df_bt.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+                    df_bt.index = pd.to_datetime(df_bt.index)
+                    
+                    class SwingStrategy(Strategy):
+                        def init(self):
+                            self.ema50 = self.I(lambda x: pd.Series(x).ewm(span=50, adjust=False).mean(), self.data.Close)
+                            self.ema200 = self.I(lambda x: pd.Series(x).ewm(span=200, adjust=False).mean(), self.data.Close)
+                            self.rsi = self.I(self.calc_rsi, self.data.Close)
+                        
+                        def calc_rsi(self, close):
+                            delta = pd.Series(close).diff()
+                            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                            rs = gain / loss
+                            return 100 - (100 / (1 + rs))
+                        
+                        def next(self):
+                            if len(self.data) < 200:
+                                return
+                            if (self.data.Close[-1] > self.ema200[-1] and 
+                                self.ema50[-1] > self.ema200[-1] and 
+                                40 < self.rsi[-1] < 70 and 
+                                not self.position):
+                                self.buy()
+                            elif self.position:
+                                if self.rsi[-1] > 70 or self.data.Close[-1] < self.ema50[-1]:
+                                    self.position.close()
+                    
+                    bt = Backtest(df_bt, SwingStrategy, cash=10000, commission=.002, exclusive_orders=True)
+                    stats = bt.run()
+                    
+                    st.subheader("📊 Resultados do Backtest")
+                    col_res1, col_res2, col_res3, col_res4 = st.columns(4)
+                    with col_res1:
+                        st.metric("Retorno Total", f"{stats['Return [%]']:.2f}%")
+                    with col_res2:
+                        st.metric("Taxa de Acerto", f"{stats['Win Rate [%]']:.2f}%")
+                    with col_res3:
+                        st.metric("Nº de Trades", f"{stats['# Trades']}")
+                    with col_res4:
+                        st.metric("Drawdown Máx.", f"{stats['Max. Drawdown [%]']:.2f}%")
+                    
+                    st.divider()
+                    st.subheader("📈 Gráfico da Curva de Capital")
+                    equity = stats['_equity_curve']
+                    fig_bt = go.Figure()
+                    fig_bt.add_trace(go.Scatter(x=equity.index, y=equity['Equity'], name='Capital', line=dict(color='#00ff88', width=2)))
+                    fig_bt.update_layout(template='plotly_dark', height=400, margin=dict(l=20, r=20, t=20, b=20))
+                    st.plotly_chart(fig_bt, use_container_width=True)
+                    
+            except Exception as e:
+                st.error(f"Erro no backtest: {e}")
