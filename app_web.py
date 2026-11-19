@@ -18,9 +18,9 @@ try:
 except ImportError:
     ALPACA_DISPONIVEL = False
 
-# Tenta importar o Gemini (para o resumo das IAs)
+# Tenta importar o Gemini (biblioteca NOVA)
 try:
-    import google.generativeai as genai
+    from google import genai
     GEMINI_DISPONIVEL = True
 except ImportError:
     GEMINI_DISPONIVEL = False
@@ -150,46 +150,36 @@ def mostrar_card_ativo(ativo, coluna, timeframe="1d"):
         else:
             st.error("Erro ao buscar")
 
-# --- CRIAÇÃO DAS ABAS (COM A NOVA ABA DE RESUMO) ---
+# --- CRIAÇÃO DAS ABAS ---
 aba_resumo, aba_daytrade, aba_swing, aba_fiis, aba_commodities, aba_internacional, aba_cripto, aba_corretora, aba_backtest = st.tabs([
     "🧠 Resumo das IAs", "📊 Day Trade", "📈 Swing Trade", "🏢 FIIs", "🛢️ Commodities", "🌍 Internacional", "🪙 Cripto", "🤖 Corretora", "🧪 Backtesting"
 ])
 
-# --- ABA RESUMO DAS IAS (NOVA) ---
+# --- ABA RESUMO DAS IAS ---
 with aba_resumo:
     st.header("🧠 Resumo do Dia - Análise das IAs")
     st.write("Esta aba usa a API do Google Gemini para ler as notícias do mercado e gerar um resumo do que encontrou.")
     
-    # Verifica se o Gemini está configurado
     gemini_key = st.secrets.get("GEMINI_API_KEY", None)
     
     if not GEMINI_DISPONIVEL:
-        st.error("⚠️ Biblioteca do Gemini não instalada. Adicione `google-generativeai` no requirements.txt.")
+        st.error("⚠️ Biblioteca do Gemini não instalada. Adicione `google-genai` no requirements.txt.")
     elif not gemini_key:
-        st.warning("⚠️ Chave da API do Gemini não configurada. Vá em 'Settings > Secrets' e adicione: GEMINI_API_KEY = 'sua_chave'")
-        st.info("Você consegue uma chave gratuita no Google AI Studio (aistudio.google.com).")
+        st.warning("⚠️ Chave da API do Gemini não configurada nos Secrets.")
     else:
-        # Configura o Gemini
-        genai.configure(api_key=gemini_key)
-        
         if st.button("🔄 Gerar Resumo do Dia (IA)", use_container_width=True):
             with st.spinner("A IA está lendo as notícias e analisando o mercado..."):
                 try:
-                    # Busca notícias de um RSS público (InfoMoney)
                     url_rss = "https://www.infomoney.com.br/feed/"
                     response = requests.get(url_rss, timeout=10)
                     
-                    # Extrai os títulos das notícias (simples, sem parser XML complexo)
                     import re
                     titulos = re.findall(r'<title><!\[CDATA\[(.*?)\]\]></title>', response.text)
-                    
-                    # Pega os 10 primeiros títulos
                     noticias = titulos[:10] if len(titulos) > 10 else titulos
                     
                     if not noticias:
                         st.warning("Não foi possível extrair notícias do RSS.")
                     else:
-                        # Monta o prompt para o Gemini
                         prompt = f"""
                         Você é um analista de mercado financeiro brasileiro.
                         Analise as seguintes notícias do dia e gere um resumo claro e objetivo em português.
@@ -202,15 +192,15 @@ with aba_resumo:
                         {chr(10).join(noticias)}
                         """
                         
-                        # Chama o Gemini
-                        model = genai.GenerativeModel('gemini-1.5-flash')
-                        resposta = model.generate_content(prompt)
+                        client = genai.Client(api_key=gemini_key)
+                        resposta = client.models.generate_content(
+                            model='gemini-2.0-flash',
+                            contents=prompt
+                        )
                         
-                        # Exibe o resumo
                         st.success("✅ Resumo gerado pela IA:")
                         st.markdown(resposta.text)
                         
-                        # Exibe as notícias usadas como base
                         with st.expander("Ver notícias usadas na análise"):
                             for i, noticia in enumerate(noticias, 1):
                                 st.write(f"{i}. {noticia}")
@@ -549,122 +539,4 @@ with aba_corretora:
                         trade_client.submit_order(ordem)
                         st.success(f"✅ Ordem de COMPRA enviada: {quantidade} x {ativo_ordem} (Stop: ${preco_stop:.2f})")
                     except Exception as e:
-                        st.error(f"Erro ao comprar: {e}")
-            with col_sell:
-                if st.button("🔴 VENDER", use_container_width=True):
-                    try:
-                        ordem = MarketOrderRequest(symbol=ativo_ordem, qty=quantidade, side=OrderSide.SELL, time_in_force=TimeInForce.DAY)
-                        trade_client.submit_order(ordem)
-                        st.success(f"✅ Ordem de VENDA enviada: {quantidade} x {ativo_ordem}")
-                    except Exception as e:
-                        st.error(f"Erro ao vender: {e}")
-
-        st.divider()
-        st.subheader("📋 Suas Posições Abertas")
-        try:
-            posicoes = trade_client.get_all_positions()
-            if posicoes:
-                for pos in posicoes:
-                    st.write(f"**{pos.symbol}**: {pos.qty} unidades @ R$ {float(pos.avg_entry_price):.2f} (Lucro: R$ {float(pos.unrealized_pl):.2f})")
-            else:
-                st.info("Você não tem posições abertas.")
-        except Exception as e:
-            st.error(f"Erro ao buscar posições: {e}")
-
-        st.divider()
-        st.subheader("📜 Histórico de Ordens")
-        try:
-            request = GetOrdersRequest(status=OrderStatus.ALL, limit=20)
-            ordens = trade_client.get_orders(filter=request)
-            if ordens:
-                dados_ordens = []
-                for o in ordens:
-                    dados_ordens.append({
-                        "Data": str(o.submitted_at).split(".")[0] if o.submitted_at else "",
-                        "Ativo": o.symbol,
-                        "Lado": str(o.side.value).upper() if o.side else "",
-                        "Qtd": float(o.qty) if o.qty else 0,
-                        "Preço": float(o.filled_avg_price) if o.filled_avg_price else 0,
-                        "Status": str(o.status.value).upper() if o.status else ""
-                    })
-                df_ordens = pd.DataFrame(dados_ordens)
-                st.dataframe(df_ordens, use_container_width=True)
-            else:
-                st.info("Nenhuma ordem encontrada.")
-        except Exception as e:
-            st.error(f"Erro ao buscar histórico: {e}")
-
-# --- ABA BACKTESTING ---
-with aba_backtest:
-    st.header("🧪 Backtesting da Estratégia de Swing Trade")
-    st.write("Teste a estratégia com dados históricos para ver como ela teria se saído no passado.")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        ativo_backtest = st.selectbox("Ativo para Backtest:", lista_ativos)
-    with col2:
-        periodo_backtest = st.selectbox("Período:", ["1y", "2y", "5y"])
-    
-    if st.button("🚀 Rodar Backtest", use_container_width=True):
-        with st.spinner("Baixando dados e rodando o backtest..."):
-            try:
-                df = yf.download(ativo_backtest, period=periodo_backtest, interval="1d", progress=False)
-                if df.empty:
-                    st.error("Não foi possível baixar os dados.")
-                else:
-                    if isinstance(df.columns, pd.MultiIndex):
-                        df.columns = df.columns.get_level_values(0)
-                    
-                    df_bt = df[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
-                    df_bt.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-                    df_bt.index = pd.to_datetime(df_bt.index)
-                    
-                    class SwingStrategy(Strategy):
-                        def init(self):
-                            self.ema50 = self.I(lambda x: pd.Series(x).ewm(span=50, adjust=False).mean(), self.data.Close)
-                            self.ema200 = self.I(lambda x: pd.Series(x).ewm(span=200, adjust=False).mean(), self.data.Close)
-                            self.rsi = self.I(self.calc_rsi, self.data.Close)
-                        
-                        def calc_rsi(self, close):
-                            delta = pd.Series(close).diff()
-                            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-                            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-                            rs = gain / loss
-                            return 100 - (100 / (1 + rs))
-                        
-                        def next(self):
-                            if len(self.data) < 200:
-                                return
-                            if (self.data.Close[-1] > self.ema200[-1] and 
-                                self.ema50[-1] > self.ema200[-1] and 
-                                40 < self.rsi[-1] < 70 and 
-                                not self.position):
-                                self.buy()
-                            elif self.position:
-                                if self.rsi[-1] > 70 or self.data.Close[-1] < self.ema50[-1]:
-                                    self.position.close()
-                    
-                    bt = Backtest(df_bt, SwingStrategy, cash=10000, commission=.002, exclusive_orders=True)
-                    stats = bt.run()
-                    
-                    st.subheader("📊 Resultados do Backtest")
-                    col_res1, col_res2, col_res3, col_res4 = st.columns(4)
-                    with col_res1:
-                        st.metric("Retorno Total", f"{stats['Return [%]']:.2f}%")
-                    with col_res2:
-                        st.metric("Taxa de Acerto", f"{stats['Win Rate [%]']:.2f}%")
-                    with col_res3:
-                        st.metric("Nº de Trades", f"{stats['# Trades']}")
-                    with col_res4:
-                        st.metric("Drawdown Máx.", f"{stats['Max. Drawdown [%]']:.2f}%")
-                    
-                    st.divider()
-                    st.subheader("📈 Gráfico da Curva de Capital")
-                    equity = stats['_equity_curve']
-                    fig_bt = go.Figure()
-                    fig_bt.add_trace(go.Scatter(x=equity.index, y=equity['Equity'], name='Capital', line=dict(color='#00ff88', width=2)))
-                    fig_bt.update_layout(template='plotly_dark', height=400, margin=dict(l=20, r=20, t=20, b=20))
-                    st.plotly_chart(fig_bt, use_container_width=True)
-                    
-            except Exception as e:
-                st.error(f"Erro no backtest: {e}")
+                        st.error(f"Erro ao comprar: {e
