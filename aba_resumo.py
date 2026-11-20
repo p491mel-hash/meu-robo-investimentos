@@ -19,7 +19,7 @@ def render_resumo():
     if st.button("🔄 Gerar Resumo do Dia (IA)", use_container_width=True):
         with st.spinner("A IA está lendo as notícias e analisando o mercado..."):
             try:
-                url_rss = "https://www.infomoney.com.br/feed/"
+               url_rss = "https://g1.globo.com/rss/g1/economia/"
                 response = requests.get(url_rss, timeout=10)
                 
                 import re
