@@ -1,14 +1,19 @@
 import streamlit as st
 import requests
 from google import genai
-from config import GEMINI_API_KEY, GEMINI_CONFIGURADA
 
 def render_resumo():
     st.header("🧠 Resumo do Dia - Análise das IAs")
     st.write("Esta aba usa a API do Google Gemini para ler as notícias do mercado e gerar um resumo.")
     
-    if not GEMINI_CONFIGURADA:
-        st.warning("⚠️ Chave da API do Gemini não configurada nos Secrets.")
+    # Tenta pegar a chave diretamente do Secrets
+    try:
+        gemini_key = st.secrets["GEMINI_API_KEY"]
+    except:
+        gemini_key = None
+
+    if not gemini_key:
+        st.warning("⚠️ Chave da API do Gemini não encontrada nos Secrets. Verifique em Settings > Secrets.")
         return
 
     if st.button("🔄 Gerar Resumo do Dia (IA)", use_container_width=True):
@@ -36,7 +41,7 @@ def render_resumo():
                     {chr(10).join(noticias)}
                     """
                     
-                    client = genai.Client(api_key=GEMINI_API_KEY)
+                    client = genai.Client(api_key=gemini_key)
                     resposta = client.models.generate_content(
                         model='gemini-2.0-flash',
                         contents=prompt
