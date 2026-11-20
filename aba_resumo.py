@@ -1,5 +1,5 @@
 import streamlit as st
-import requests
+import feedparser
 from google import genai
 
 def render_resumo():
@@ -18,15 +18,15 @@ def render_resumo():
     if st.button("🔄 Gerar Resumo do Dia (IA)", use_container_width=True):
         with st.spinner("A IA está lendo as notícias e analisando o mercado..."):
             try:
-                url_rss = "https://g1.globo.com/rss/g1/economia/"
-                response = requests.get(url_rss, timeout=10)
+                # Usa o feedparser para ler o RSS do Google News (Economia/Brasil)
+                url_rss = "https://news.google.com/rss/search?q=economia+brasil&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+                feed = feedparser.parse(url_rss)
                 
-                import re
-                titulos = re.findall(r'<title><!\[CDATA\[(.*?)\]\]></title>', response.text)
-                noticias = titulos[:10] if len(titulos) > 10 else titulos
+                # Extrai os títulos das notícias
+                noticias = [entry.title for entry in feed.entries[:10]]
                 
                 if not noticias:
-                    st.warning("Não foi possível extrair notícias do RSS.")
+                    st.warning("Não foi possível extrair notícias do RSS. Tente novamente em alguns instantes.")
                 else:
                     prompt = f"""
                     Você é um analista de mercado financeiro brasileiro.
