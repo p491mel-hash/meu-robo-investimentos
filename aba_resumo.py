@@ -1,11 +1,10 @@
 import streamlit as st
-import feedparser
-import time
 from google import genai
+from google.genai import types
 
 def render_resumo():
-    st.header("🧠 Resumo do Dia - Análise das IAs")
-    st.write("Esta aba usa a API do Google Gemini para ler as notícias do mercado e gerar um resumo.")
+    st.header("🧠 Análise Autônoma das IAs")
+    st.write("A IA vai pesquisar no Google em tempo real, ler as notícias que ela achar relevantes e decidir o que fazer com elas.")
     
     try:
         gemini_key = st.secrets["GEMINI_API_KEY"]
@@ -16,63 +15,56 @@ def render_resumo():
         st.warning("⚠️ Chave da API do Gemini não encontrada nos Secrets.")
         return
 
-    if st.button("🔄 Gerar Resumo do Dia (IA)", use_container_width=True):
-        with st.spinner("A IA está lendo as notícias e analisando o mercado..."):
+    if st.button("🔄 Analisar Mercado (IA Autônoma)", use_container_width=True):
+        with st.spinner("A IA está pesquisando notícias no Google e tomando decisões..."):
             try:
-                url_rss = "https://news.google.com/rss/search?q=economia+brasil&hl=pt-BR&gl=BR&ceid=BR:pt-419"
-                feed = feedparser.parse(url_rss)
-                noticias = [entry.title for entry in feed.entries[:10]]
+                # Configura o cliente
+                client = genai.Client(api_key=gemini_key)
                 
-                if not noticias:
-                    st.warning("Não foi possível extrair notícias do RSS.")
-                else:
-                    prompt = f"""
-                    Você é um analista de mercado financeiro brasileiro.
-                    Analise as seguintes notícias do dia e gere um resumo claro e objetivo em português.
-                    Destaque:
-                    1. O sentimento geral do mercado (positivo, negativo ou neutro).
-                    2. Os setores ou ativos que podem ser afetados.
-                    3. Uma recomendação simples (cautela, oportunidade de compra, etc.).
-                    
-                    Notícias:
-                    {chr(10).join(noticias)}
-                    """
-                    
-                    client = genai.Client(api_key=gemini_key)
-                    
-                    # --- LÓGICA DE RETRY (TENTATIVA AUTOMÁTICA) ---
-                    max_tentativas = 3
-                    resposta = None
-                    erro_final = None
-                    
-                    for tentativa in range(max_tentativas):
-                        try:
-                            resposta = client.models.generate_content(
-                                model='gemini-3.8-flash',
-                                contents=prompt
-                            )
-                            break  # Se funcionou, sai do loop
-                        except Exception as e:
-                            erro_final = e
-                            if "503" in str(e) or "UNAVAILABLE" in str(e):
-                                # Espera 2s, depois 4s, depois 8s
-                                espera = 2 ** (tentativa + 1)
-                                st.info(f"Servidor do Google ocupado. Tentando de novo em {espera} segundos... (Tentativa {tentativa + 1}/{max_tentativas})")
-                                time.sleep(espera)
-                            else:
-                                raise e  # Se for outro erro, para tudo
-                    
-                    if resposta is None:
-                        st.error(f"O Google não respondeu após {max_tentativas} tentativas. Tente novamente em alguns minutos. Erro: {erro_final}")
-                    else:
-                        st.success("✅ Resumo gerado pela IA:")
-                        st.markdown(resposta.text)
-                        
-                        with st.expander("Ver notícias usadas na análise"):
-                            for i, noticia in enumerate(noticias, 1):
-                                st.write(f"{i}. {noticia}")
-                            
+                # Define a ferramenta de busca do Google
+                grounding_tool = types.Tool(
+                    google_search=types.GoogleSearch()
+                )
+                
+                # Configura a requisição
+                config = types.GenerateContentConfig(
+                    tools=[grounding_tool]
+                )
+                
+                # O prompt agora é uma ORDEM para a IA agir, não para ela resumir algo que já temos
+                prompt = """
+                Você é um analista de investimentos sênior e autônomo.
+                
+                Sua tarefa:
+                1. Pesquise no Google as notícias mais recentes (últimas 24h) sobre o mercado brasileiro (Ibovespa, Dólar, PETR4, VALE3, e economia em geral).
+                2. Leia os resultados que você encontrar.
+                3. Baseado APENAS no que você leu, decida: O mercado está em viés de ALTA, BAIXA ou NEUTRO?
+                4. Justifique sua decisão citando as notícias que você encontrou.
+                5. Dê uma recomendação clara: COMPRAR, VENDER ou AGUARDAR.
+                
+                Responda em português, de forma direta e objetiva.
+                """
+                
+                # Chama a IA (agora com a ferramenta de busca ativa)
+                resposta = client.models.generate_content(
+                    model='gemini-3.8-flash',
+                    contents=prompt,
+                    config=config
+                )
+                
+                st.success("✅ Análise Autônoma Concluída:")
+                st.markdown(resposta.text)
+                
+                # Mostra as fontes que a IA usou (se disponível)
+                if hasattr(resposta, 'candidates') and resposta.candidates:
+                    metadata = resposta.candidates[0].grounding_metadata
+                    if metadata and metadata.grounding_chunks:
+                        with st.expander("🔗 Fontes consultadas pela IA"):
+                            for chunk in metadata.grounding_chunks:
+                                if hasattr(chunk, 'web') and chunk.web:
+                                    st.write(f"- [{chunk.web.title}]({chunk.web.uri})")
+                                    
             except Exception as e:
-                st.error(f"Erro ao gerar resumo: {e}")
+                st.error(f"Erro na análise autônoma: {e}")
     
-    st.info("💡 Dica: O resumo é gerado sob demanda. Clique no botão para a IA analisar as notícias do momento.")
+    st.info("💡 Dica: A IA agora decide sozinha o que pesquisar no Google. Ela lê as notícias e toma a decisão baseada no que encontrou.")
