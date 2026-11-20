@@ -1,5 +1,6 @@
 import streamlit as st
 import feedparser
+import time
 from google import genai
 
 def render_resumo():
@@ -38,17 +39,38 @@ def render_resumo():
                     """
                     
                     client = genai.Client(api_key=gemini_key)
-                    resposta = client.models.generate_content(
-                        model='gemini-3.8-flash',
-                        contents=prompt
-                    )
                     
-                    st.success("✅ Resumo gerado pela IA:")
-                    st.markdown(resposta.text)
+                    # --- LÓGICA DE RETRY (TENTATIVA AUTOMÁTICA) ---
+                    max_tentativas = 3
+                    resposta = None
+                    erro_final = None
                     
-                    with st.expander("Ver notícias usadas na análise"):
-                        for i, noticia in enumerate(noticias, 1):
-                            st.write(f"{i}. {noticia}")
+                    for tentativa in range(max_tentativas):
+                        try:
+                            resposta = client.models.generate_content(
+                                model='gemini-3.8-flash',
+                                contents=prompt
+                            )
+                            break  # Se funcionou, sai do loop
+                        except Exception as e:
+                            erro_final = e
+                            if "503" in str(e) or "UNAVAILABLE" in str(e):
+                                # Espera 2s, depois 4s, depois 8s
+                                espera = 2 ** (tentativa + 1)
+                                st.info(f"Servidor do Google ocupado. Tentando de novo em {espera} segundos... (Tentativa {tentativa + 1}/{max_tentativas})")
+                                time.sleep(espera)
+                            else:
+                                raise e  # Se for outro erro, para tudo
+                    
+                    if resposta is None:
+                        st.error(f"O Google não respondeu após {max_tentativas} tentativas. Tente novamente em alguns minutos. Erro: {erro_final}")
+                    else:
+                        st.success("✅ Resumo gerado pela IA:")
+                        st.markdown(resposta.text)
+                        
+                        with st.expander("Ver notícias usadas na análise"):
+                            for i, noticia in enumerate(noticias, 1):
+                                st.write(f"{i}. {noticia}")
                             
             except Exception as e:
                 st.error(f"Erro ao gerar resumo: {e}")
