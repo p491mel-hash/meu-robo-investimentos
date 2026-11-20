@@ -18,15 +18,12 @@ def render_resumo():
     if st.button("🔄 Gerar Resumo do Dia (IA)", use_container_width=True):
         with st.spinner("A IA está lendo as notícias e analisando o mercado..."):
             try:
-                # Usa o feedparser para ler o RSS do Google News (Economia/Brasil)
                 url_rss = "https://news.google.com/rss/search?q=economia+brasil&hl=pt-BR&gl=BR&ceid=BR:pt-419"
                 feed = feedparser.parse(url_rss)
-                
-                # Extrai os títulos das notícias
                 noticias = [entry.title for entry in feed.entries[:10]]
                 
                 if not noticias:
-                    st.warning("Não foi possível extrair notícias do RSS. Tente novamente em alguns instantes.")
+                    st.warning("Não foi possível extrair notícias do RSS.")
                 else:
                     prompt = f"""
                     Você é um analista de mercado financeiro brasileiro.
@@ -42,7 +39,7 @@ def render_resumo():
                     
                     client = genai.Client(api_key=gemini_key)
                     resposta = client.models.generate_content(
-                     model='gemini-3.8-flash'
+                        model='gemini-3.8-flash',
                         contents=prompt
                     )
                     
