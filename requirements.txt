@@ -9,3 +9,4 @@ web3
 alpaca-py
 backtesting
 google-genai
+feedparser
