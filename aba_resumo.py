@@ -6,20 +6,19 @@ def render_resumo():
     st.header("🧠 Resumo do Dia - Análise das IAs")
     st.write("Esta aba usa a API do Google Gemini para ler as notícias do mercado e gerar um resumo.")
     
-    # Tenta pegar a chave diretamente do Secrets
     try:
         gemini_key = st.secrets["GEMINI_API_KEY"]
     except:
         gemini_key = None
 
     if not gemini_key:
-        st.warning("⚠️ Chave da API do Gemini não encontrada nos Secrets. Verifique em Settings > Secrets.")
+        st.warning("⚠️ Chave da API do Gemini não encontrada nos Secrets.")
         return
 
     if st.button("🔄 Gerar Resumo do Dia (IA)", use_container_width=True):
         with st.spinner("A IA está lendo as notícias e analisando o mercado..."):
             try:
-               url_rss = "https://g1.globo.com/rss/g1/economia/"
+                url_rss = "https://g1.globo.com/rss/g1/economia/"
                 response = requests.get(url_rss, timeout=10)
                 
                 import re
