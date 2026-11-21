@@ -349,7 +349,7 @@ with aba_swing:
 # --- ABA FIIs ---
 with aba_fiis:
     st.header("🏢 Fundos Imobiliários")
-    fiis = ['HGLG11', 'KNRI11', 'MXRF11', 'XPML11', 'VRTA11', 'BTLG11', 'VISC11', 'XPLG11']
+    fiis = ['HGLG11', 'KNRI11', 'MXRF11', 'XPML11', 'VRTA11', 'BTLG11', 'VISC11', 'XPLG11', 'SNEL11', 'RBRF11', 'KNCR11', 'VGHF11', 'MALL11']
     colunas = st.columns(len(fiis))
     for i, ativo in enumerate(fiis):
         mostrar_card_ativo(ativo, colunas[i])
