@@ -10,3 +10,4 @@ alpaca-py
 backtesting
 google-genai
 feedparser
+crewai
