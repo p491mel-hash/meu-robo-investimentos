@@ -1,5 +1,6 @@
 import streamlit as st
 import feedparser
+import time
 from google import genai
 
 def render_resumo():
@@ -18,7 +19,6 @@ def render_resumo():
     if st.button("🔄 Analisar e Decidir (IA)", use_container_width=True):
         with st.spinner("A IA está lendo as notícias, tomando a decisão e preparando o relatório..."):
             try:
-                # 1. Busca as notícias (o código busca, não a IA)
                 url_rss = "https://news.google.com/rss/search?q=economia+brasil&hl=pt-BR&gl=BR&ceid=BR:pt-419"
                 feed = feedparser.parse(url_rss)
                 noticias = [entry.title for entry in feed.entries[:10]]
@@ -27,7 +27,6 @@ def render_resumo():
                     st.warning("Não foi possível extrair notícias do RSS.")
                     return
 
-                # 2. Monta o prompt para a IA AGIR e PRESTAR CONTAS
                 prompt = f"""
                 Você é um gestor de fundos de investimento sênior e autônomo.
                 
@@ -47,22 +46,39 @@ def render_resumo():
                 {chr(10).join(noticias)}
                 """
                 
-                # 3. Chama a IA
                 client = genai.Client(api_key=gemini_key)
-                resposta = client.models.generate_content(
-                    model='gemini-3.8-flash',
-                    contents=prompt
-                )
                 
-                # 4. Mostra o resultado (a "prestação de contas")
-                st.success("✅ Relatório da IA:")
-                st.markdown(resposta.text)
+                # --- LÓGICA DE RETRY (TENTATIVA AUTOMÁTICA) ---
+                max_tentativas = 3
+                resposta = None
+                erro_final = None
                 
-                # 5. Mostra as notícias que ela usou (transparência total)
-                with st.expander("🔍 Ver as notícias que a IA leu"):
-                    for i, noticia in enumerate(noticias, 1):
-                        st.write(f"{i}. {noticia}")
-                        
+                for tentativa in range(max_tentativas):
+                    try:
+                        resposta = client.models.generate_content(
+                            model='gemini-3.8-flash',
+                            contents=prompt
+                        )
+                        break  # Se funcionou, sai do loop
+                    except Exception as e:
+                        erro_final = e
+                        if "503" in str(e) or "UNAVAILABLE" in str(e):
+                            espera = 2 ** (tentativa + 1)
+                            st.info(f"Servidor do Google ocupado. Tentando de novo em {espera} segundos... (Tentativa {tentativa + 1}/{max_tentativas})")
+                            time.sleep(espera)
+                        else:
+                            raise e
+                
+                if resposta is None:
+                    st.error(f"O Google não respondeu após {max_tentativas} tentativas. Tente novamente em alguns minutos. Erro: {erro_final}")
+                else:
+                    st.success("✅ Relatório da IA:")
+                    st.markdown(resposta.text)
+                    
+                    with st.expander("🔍 Ver as notícias que a IA leu"):
+                        for i, noticia in enumerate(noticias, 1):
+                            st.write(f"{i}. {noticia}")
+                            
             except Exception as e:
                 st.error(f"Erro na análise: {e}")
     
