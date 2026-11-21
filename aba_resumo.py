@@ -1,10 +1,10 @@
 import streamlit as st
+import feedparser
 from google import genai
-from google.genai import types
 
 def render_resumo():
-    st.header("🧠 Análise Autônoma das IAs")
-    st.write("A IA vai pesquisar no Google em tempo real, ler as notícias que ela achar relevantes e decidir o que fazer com elas.")
+    st.header("🧠 Análise e Decisão das IAs")
+    st.write("A IA lê as notícias, decide o melhor caminho e presta contas do que fez.")
     
     try:
         gemini_key = st.secrets["GEMINI_API_KEY"]
@@ -15,56 +15,55 @@ def render_resumo():
         st.warning("⚠️ Chave da API do Gemini não encontrada nos Secrets.")
         return
 
-    if st.button("🔄 Analisar Mercado (IA Autônoma)", use_container_width=True):
-        with st.spinner("A IA está pesquisando notícias no Google e tomando decisões..."):
+    if st.button("🔄 Analisar e Decidir (IA)", use_container_width=True):
+        with st.spinner("A IA está lendo as notícias, tomando a decisão e preparando o relatório..."):
             try:
-                # Configura o cliente
-                client = genai.Client(api_key=gemini_key)
+                # 1. Busca as notícias (o código busca, não a IA)
+                url_rss = "https://news.google.com/rss/search?q=economia+brasil&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+                feed = feedparser.parse(url_rss)
+                noticias = [entry.title for entry in feed.entries[:10]]
                 
-                # Define a ferramenta de busca do Google
-                grounding_tool = types.Tool(
-                    google_search=types.GoogleSearch()
-                )
-                
-                # Configura a requisição
-                config = types.GenerateContentConfig(
-                    tools=[grounding_tool]
-                )
-                
-                # O prompt agora é uma ORDEM para a IA agir, não para ela resumir algo que já temos
-                prompt = """
-                Você é um analista de investimentos sênior e autônomo.
+                if not noticias:
+                    st.warning("Não foi possível extrair notícias do RSS.")
+                    return
+
+                # 2. Monta o prompt para a IA AGIR e PRESTAR CONTAS
+                prompt = f"""
+                Você é um gestor de fundos de investimento sênior e autônomo.
                 
                 Sua tarefa:
-                1. Pesquise no Google as notícias mais recentes (últimas 24h) sobre o mercado brasileiro (Ibovespa, Dólar, PETR4, VALE3, e economia em geral).
-                2. Leia os resultados que você encontrar.
-                3. Baseado APENAS no que você leu, decida: O mercado está em viés de ALTA, BAIXA ou NEUTRO?
-                4. Justifique sua decisão citando as notícias que você encontrou.
-                5. Dê uma recomendação clara: COMPRAR, VENDER ou AGUARDAR.
+                1. Leia atentamente as notícias abaixo.
+                2. Baseado APENAS no que você leu, decida qual é o melhor caminho para o mercado brasileiro hoje.
+                3. Escolha UMA das três opções: COMPRAR (mercado em alta), VENDER (mercado em baixa) ou AGUARDAR (mercado neutro/incerto).
+                4. JUSTIFIQUE sua decisão citando as notícias que te levaram a essa conclusão.
+                5. Explique o que você fez: "Eu li as notícias, identifiquei que [resumo do que viu] e por isso decidi [decisão]".
                 
-                Responda em português, de forma direta e objetiva.
+                Formato da resposta (obrigatório):
+                **DECISÃO:** [COMPRAR / VENDER / AGUARDAR]
+                **JUSTIFICATIVA:** [Sua explicação baseada nas notícias]
+                **O QUE EU FIZ:** [Seu relatório de ações]
+                
+                Notícias:
+                {chr(10).join(noticias)}
                 """
                 
-                # Chama a IA (agora com a ferramenta de busca ativa)
+                # 3. Chama a IA
+                client = genai.Client(api_key=gemini_key)
                 resposta = client.models.generate_content(
                     model='gemini-3.8-flash',
-                    contents=prompt,
-                    config=config
+                    contents=prompt
                 )
                 
-                st.success("✅ Análise Autônoma Concluída:")
+                # 4. Mostra o resultado (a "prestação de contas")
+                st.success("✅ Relatório da IA:")
                 st.markdown(resposta.text)
                 
-                # Mostra as fontes que a IA usou (se disponível)
-                if hasattr(resposta, 'candidates') and resposta.candidates:
-                    metadata = resposta.candidates[0].grounding_metadata
-                    if metadata and metadata.grounding_chunks:
-                        with st.expander("🔗 Fontes consultadas pela IA"):
-                            for chunk in metadata.grounding_chunks:
-                                if hasattr(chunk, 'web') and chunk.web:
-                                    st.write(f"- [{chunk.web.title}]({chunk.web.uri})")
-                                    
+                # 5. Mostra as notícias que ela usou (transparência total)
+                with st.expander("🔍 Ver as notícias que a IA leu"):
+                    for i, noticia in enumerate(noticias, 1):
+                        st.write(f"{i}. {noticia}")
+                        
             except Exception as e:
-                st.error(f"Erro na análise autônoma: {e}")
+                st.error(f"Erro na análise: {e}")
     
-    st.info("💡 Dica: A IA agora decide sozinha o que pesquisar no Google. Ela lê as notícias e toma a decisão baseada no que encontrou.")
+    st.info("💡 A IA agora lê as notícias, decide o melhor caminho e te mostra o relatório do que ela fez.")
