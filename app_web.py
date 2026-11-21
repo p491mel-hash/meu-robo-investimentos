@@ -149,8 +149,8 @@ aba_resumo, aba_crew, aba_daytrade, aba_swing, aba_fiis, aba_commodities, aba_in
 ])
 
 # --- ABA RESUMO DAS IAS ---
-with aba_resumo:
-    render_resumo()
+with aba_crew:
+    render_crew()
 
 # --- ABA DAY TRADE ---
 with aba_daytrade:
