@@ -13,7 +13,7 @@ from backtesting import Backtest, Strategy
 from config import ALPACA_CONFIGURADA, GEMINI_CONFIGURADA
 
 # Importa a aba de resumo
-from aba_resumo import render_resumo
+from aba_crew import render_crew
 
 # Tenta importar a Alpaca
 try:
