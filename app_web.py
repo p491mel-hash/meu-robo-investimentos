@@ -144,8 +144,8 @@ def mostrar_card_ativo(ativo, coluna, timeframe="1d"):
             st.error("Erro ao buscar")
 
 # --- CRIAÇÃO DAS ABAS ---
-aba_resumo, aba_daytrade, aba_swing, aba_fiis, aba_commodities, aba_internacional, aba_cripto, aba_corretora, aba_backtest = st.tabs([
-    "🧠 Resumo das IAs", "📊 Day Trade", "📈 Swing Trade", "🏢 FIIs", "🛢️ Commodities", "🌍 Internacional", "🪙 Cripto", "🤖 Corretora", "🧪 Backtesting"
+aba_resumo, aba_crew, aba_daytrade, aba_swing, aba_fiis, aba_commodities, aba_internacional, aba_cripto, aba_corretora, aba_backtest = st.tabs([
+    "🧠 Resumo das IAs", "🤝 Time de IAs", "📊 Day Trade", "📈 Swing Trade", "🏢 FIIs", "🛢️ Commodities", "🌍 Internacional", "🪙 Cripto", "🤖 Corretora", "🧪 Backtesting"
 ])
 
 # --- ABA RESUMO DAS IAS ---
